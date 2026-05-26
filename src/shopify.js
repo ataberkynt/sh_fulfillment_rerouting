@@ -30,8 +30,7 @@ async function shopifyGraphQL(query, variables = {}) {
   return json.data;
 }
 
-// Look up an order by order name (e.g. "#4521") and return
-// its fulfillment orders, line items, and inventory per location
+// Look up an order by order name (e.g. "#4521")
 async function getOrderByName(orderName) {
   const name = orderName.startsWith('#') ? orderName : `#${orderName}`;
 
@@ -65,7 +64,7 @@ async function getOrderByName(orderName) {
                     edges {
                       node {
                         id
-                        quantity
+                        totalQuantity
                         remainingQuantity
                         variant {
                           id
@@ -95,11 +94,10 @@ async function getOrderByName(orderName) {
 
   const orderEdge = data?.orders?.edges?.[0];
   if (!orderEdge) return null;
-
   return orderEdge.node;
 }
 
-// Get all active locations for the store
+// Get all active locations, filtered by ALLOWED_LOCATION_IDS if set
 async function getLocations() {
   const data = await shopifyGraphQL(`
     query {
@@ -120,7 +118,23 @@ async function getLocations() {
     }
   `);
 
-  return data.locations.edges.map(e => e.node);
+  let locations = data.locations.edges.map(e => e.node);
+
+  // Filter to allowed locations if the env var is set
+  // ALLOWED_LOCATION_IDS = comma-separated Shopify location IDs
+  // e.g. "gid://shopify/Location/12345,gid://shopify/Location/67890"
+  // OR just the numeric IDs: "12345,67890" — we handle both
+  const allowedRaw = process.env.ALLOWED_LOCATION_IDS;
+  if (allowedRaw) {
+    const allowed = allowedRaw.split(',').map(s => {
+      s = s.trim();
+      // normalise: if it's just a number, wrap it in the GID format
+      return s.startsWith('gid://') ? s : `gid://shopify/Location/${s}`;
+    });
+    locations = locations.filter(l => allowed.includes(l.id));
+  }
+
+  return locations;
 }
 
 // Get inventory levels for a list of inventory item IDs across all locations
@@ -151,7 +165,6 @@ async function getInventoryLevels(inventoryItemIds) {
     }
   `, { ids: inventoryItemIds });
 
-  // Shape: { inventoryItemId: { locationId: availableQty } }
   const result = {};
   for (const node of data.nodes || []) {
     if (!node) continue;
@@ -165,12 +178,7 @@ async function getInventoryLevels(inventoryItemIds) {
   return result;
 }
 
-// Split specific line items out of a fulfillment order, then move
-// the new fulfillment order to the chosen location.
-//
-// fulfillmentOrderId: gid://shopify/FulfillmentOrder/xxx
-// lineItems: [{ id: "gid://shopify/FulfillmentOrderLineItem/xxx", quantity: N }]
-// locationId: gid://shopify/Location/xxx
+// Split selected line items out of a fulfillment order, then move to new location
 async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId) {
   // Step 1: Split
   const splitData = await shopifyGraphQL(`
@@ -186,7 +194,7 @@ async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId) {
             edges {
               node {
                 id
-                quantity
+                totalQuantity
               }
             }
           }
@@ -207,12 +215,9 @@ async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId) {
     throw new Error(`Split failed: ${splitErrors.map(e => e.message).join(', ')}`);
   }
 
-  // Find the newly created fulfillment order (the split-off one)
-  // Shopify returns both the original (remainder) and new (split) orders.
-  // The new one only contains our selected line items.
   const splitOrders = splitData.fulfillmentOrderSplit?.fulfillmentOrders || [];
   const selectedLineItemIds = new Set(lineItems.map(l => l.id));
-  
+
   let newFulfillmentOrderId = null;
   for (const fo of splitOrders) {
     const foLineItemIds = fo.lineItems.edges.map(e => e.node.id);
@@ -222,7 +227,6 @@ async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId) {
     }
   }
 
-  // Fallback: just take the second order returned if heuristic fails
   if (!newFulfillmentOrderId && splitOrders.length >= 2) {
     newFulfillmentOrderId = splitOrders[splitOrders.length - 1].id;
   }
