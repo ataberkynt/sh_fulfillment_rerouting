@@ -192,10 +192,10 @@ async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId) {
             id
             status
           }
-          userErrors {
-            field
-            message
-          }
+        }
+        userErrors {
+          field
+          message
         }
       }
     }
@@ -207,7 +207,7 @@ async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId) {
   });
 
   const splitResults = splitData.fulfillmentOrderSplit?.fulfillmentOrderSplits || [];
-  const splitErrors = splitResults.flatMap(r => r.userErrors || []);
+  const splitErrors = splitData.fulfillmentOrderSplit?.userErrors || [];
   if (splitErrors.length) {
     throw new Error(`Split failed: ${splitErrors.map(e => e.message).join(', ')}`);
   }
