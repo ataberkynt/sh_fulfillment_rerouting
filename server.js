@@ -1,0 +1,201 @@
+require('dotenv').config();
+
+const express = require('express');
+const path = require('path');
+const { getOrderByName, getLocations, getInventoryLevels, rerouteFulfillment } = require('./shopify');
+const { authenticate, getWarehouseLocationId, getAllowedLocationIds } = require('./auth');
+const { logReroute, getLogs, getLogCount } = require('./db');
+
+const app = express();
+app.use(express.json());
+app.use(express.static(path.join(__dirname, 'public')));
+
+// ── Auth middleware ──────────────────────────────────────────────────────────
+
+function requireUser(req, res, next) {
+  const username = req.headers['x-username'];
+  const password = req.headers['x-password'];
+  if (!username || !password) return res.status(401).json({ error: 'Unauthorized' });
+  const user = authenticate(username, password);
+  if (!user) return res.status(401).json({ error: 'Unauthorized' });
+  req.user = user;
+  next();
+}
+
+function requireAdmin(req, res, next) {
+  const pw = req.headers['x-admin-password'];
+  if (!pw || pw !== process.env.ADMIN_PASSWORD) return res.status(401).json({ error: 'Unauthorized' });
+  next();
+}
+
+// ── Routes ───────────────────────────────────────────────────────────────────
+
+app.get('/api/health', (req, res) => {
+  res.json({ ok: true, store: process.env.SHOPIFY_STORE_DOMAIN });
+});
+
+// Login — returns user info including their assigned location
+app.post('/api/auth', (req, res) => {
+  const { username, password } = req.body;
+  const user = authenticate(username, password);
+  if (!user) return res.status(401).json({ error: 'Wrong username or password' });
+  res.json({ ok: true, username: user.username, locationId: user.locationId });
+});
+
+// Get allowed destination locations (excluding warehouse and user's own store)
+app.get('/api/locations', requireUser, async (req, res) => {
+  try {
+    const allowed = getAllowedLocationIds();
+    const warehouse = getWarehouseLocationId();
+    const userLocId = req.user.locationId;
+
+    // Exclude warehouse and user's own store from destinations
+    const destinations = allowed.filter(id => id !== warehouse && id !== userLocId);
+    const locations = await getLocations(destinations);
+    res.json({ locations });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get order — applies visibility rules based on user's location
+app.get('/api/order/:orderName', requireUser, async (req, res) => {
+  try {
+    const order = await getOrderByName(req.params.orderName);
+    if (!order) return res.status(404).json({ error: `Order ${req.params.orderName} not found` });
+
+    const warehouse = getWarehouseLocationId();
+    const userLocId = req.user.locationId;
+    const fulfillmentOrders = order.fulfillmentOrders?.edges?.map(e => e.node) || [];
+
+    // Classify each fulfillment order
+    // actionable = assigned to user's store
+    // locked = assigned to another store (not warehouse)
+    // warehouse = assigned to warehouse
+    const classified = fulfillmentOrders.map(fo => {
+      const foLocId = fo.assignedLocation?.location?.id;
+      let access = 'warehouse';
+      if (foLocId === userLocId) access = 'actionable';
+      else if (foLocId !== warehouse) access = 'locked'; // another store
+      return { ...fo, access };
+    });
+
+    // If ALL fulfillment orders are warehouse → block entirely
+    const allWarehouse = classified.every(fo => fo.access === 'warehouse');
+    if (allWarehouse) {
+      return res.status(403).json({
+        error: 'ACCESS_DENIED',
+        message: 'This order is fully assigned to the warehouse and cannot be accessed here.',
+      });
+    }
+
+    // Collect inventory item IDs only for actionable FOs
+    const inventoryItemIds = [];
+    for (const fo of classified) {
+      if (fo.access !== 'actionable') continue;
+      for (const liEdge of fo.lineItems?.edges || []) {
+        const invId = liEdge.node.variant?.inventoryItem?.id;
+        if (invId) inventoryItemIds.push(invId);
+      }
+    }
+
+    const inventoryByItem = await getInventoryLevels([...new Set(inventoryItemIds)]);
+
+    // Also fetch allowed location names for inventory display
+    const allowed = getAllowedLocationIds();
+    const allLocations = await getLocations(allowed);
+
+    res.json({ order: { ...order, fulfillmentOrders: { edges: classified.map(fo => ({ node: fo })) } }, inventoryByItem, allLocations });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Reroute — validates permissions then calls Shopify API
+app.post('/api/reroute', requireUser, async (req, res) => {
+  const { fulfillmentOrderId, lineItems, locationId, orderName, orderId, fromLocationName, toLocationName, itemDetails } = req.body;
+
+  if (!fulfillmentOrderId || !lineItems?.length || !locationId) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  const warehouse = getWarehouseLocationId();
+  const allowed = getAllowedLocationIds();
+  const userLocId = req.user.locationId;
+
+  // Security: destination must be in allowed list and not warehouse or user's own store
+  if (!allowed.includes(locationId)) {
+    return res.status(403).json({ error: 'Destination location not allowed' });
+  }
+  if (locationId === warehouse) {
+    return res.status(403).json({ error: 'Cannot reroute to warehouse' });
+  }
+  if (locationId === userLocId) {
+    return res.status(403).json({ error: 'Cannot reroute to your own store' });
+  }
+
+  // Security: verify the fulfillment order is actually assigned to user's store
+  // We re-fetch the order to confirm — don't trust client
+  try {
+    const orderNameClean = orderName?.replace('#', '') || '';
+    const order = await getOrderByName(orderNameClean);
+    if (!order) return res.status(404).json({ error: 'Order not found' });
+
+    const fulfillmentOrders = order.fulfillmentOrders?.edges?.map(e => e.node) || [];
+    const targetFO = fulfillmentOrders.find(fo => fo.id === fulfillmentOrderId);
+    if (!targetFO) return res.status(403).json({ error: 'Fulfillment order not found on this order' });
+
+    const foLocId = targetFO.assignedLocation?.location?.id;
+    if (foLocId !== userLocId) {
+      return res.status(403).json({ error: 'You can only reroute fulfillment orders assigned to your store' });
+    }
+
+    const result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId);
+
+    // Log the action
+    logReroute({
+      username: req.user.username,
+      userLocationName: targetFO.assignedLocation?.name || userLocId,
+      orderName: order.name,
+      orderId: order.id,
+      items: itemDetails || lineItems.map(li => ({ name: li.id, qty: li.quantity })),
+      fromLocation: fromLocationName || foLocId,
+      toLocation: toLocationName || locationId,
+      fulfillmentOrderId,
+      newFulfillmentOrderId: result.newFulfillmentOrderId,
+    });
+
+    res.json({ ok: true, fulfillmentOrder: result.movedFulfillmentOrder });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Admin routes ─────────────────────────────────────────────────────────────
+
+app.get('/api/admin/logs', requireAdmin, (req, res) => {
+  const { limit = 100, offset = 0, username, orderName } = req.query;
+  const logs = getLogs({ limit: Number(limit), offset: Number(offset), username, orderName });
+  const total = getLogCount();
+  res.json({ logs, total });
+});
+
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public/admin.html'));
+});
+
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public/index.html'));
+});
+
+// ── Start ─────────────────────────────────────────────────────────────────────
+
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Fulfillment rerouter v2 running on http://localhost:${PORT}`);
+  console.log(`Store: ${process.env.SHOPIFY_STORE_DOMAIN}`);
+  console.log(`Warehouse: ${getWarehouseLocationId()}`);
+});
