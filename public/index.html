@@ -212,15 +212,41 @@
 </div>
 
 <script>
-let SESSION = null; // { username, locationId }
-let LOCATIONS = []; // allowed destination locations
+let SESSION = null; // { username, locationId, _pw }
+let LOCATIONS = [];
 let currentOrder = null;
 let inventoryByItem = {};
 let allLocations = [];
-let selectedItems = {}; // { foId: { liId: qty } }
+let selectedItems = {};
 let selectedLocation = null;
 
-// ── Auth ─────────────────────────────────────────────────────────────────────
+// ── Inactivity timeout (5 min) ────────────────────────────────────────────────
+const INACTIVITY_MS = 5 * 60 * 1000;
+let inactivityTimer = null;
+
+function resetInactivityTimer() {
+  clearTimeout(inactivityTimer);
+  inactivityTimer = setTimeout(() => {
+    if (SESSION) { doLogout(true); }
+  }, INACTIVITY_MS);
+}
+
+['mousemove','keydown','click','touchstart'].forEach(evt =>
+  document.addEventListener(evt, resetInactivityTimer, { passive: true })
+);
+
+// ── Session persistence (survives refresh, not tab close) ─────────────────────
+function saveSession(s) {
+  try { sessionStorage.setItem('frSession', JSON.stringify(s)); } catch(e) {}
+}
+function loadSession() {
+  try { return JSON.parse(sessionStorage.getItem('frSession') || 'null'); } catch(e) { return null; }
+}
+function clearSession() {
+  try { sessionStorage.removeItem('frSession'); } catch(e) {}
+}
+
+// ── Auth ──────────────────────────────────────────────────────────────────────
 async function doLogin() {
   const username = document.getElementById('un-input').value.trim();
   const password = document.getElementById('pw-input').value.trim();
@@ -235,35 +261,51 @@ async function doLogin() {
     const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
     const json = await res.json();
     if (!res.ok) { err.textContent = json.error || 'Login failed'; err.style.display = 'block'; return; }
-    SESSION = { username: json.username, locationId: json.locationId };
-    document.getElementById('login-screen').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    document.getElementById('user-chip').textContent = username;
-    await loadLocations();
+    SESSION = { username: json.username, locationId: json.locationId, _pw: password };
+    saveSession(SESSION);
+    showApp();
   } catch(e) { err.textContent = 'Cannot reach server'; err.style.display = 'block'; }
   finally { btn.disabled = false; spinner.style.display = 'none'; }
 }
 
-function doLogout() {
+function showApp() {
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  document.getElementById('user-chip').textContent = SESSION.username;
+  resetInactivityTimer();
+  loadLocations();
+}
+
+function doLogout(expired = false) {
   SESSION = null; LOCATIONS = []; currentOrder = null;
   selectedItems = {}; selectedLocation = null;
+  clearSession();
+  clearTimeout(inactivityTimer);
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
   document.getElementById('order-area').innerHTML = '';
   document.getElementById('un-input').value = '';
   document.getElementById('pw-input').value = '';
+  if (expired) {
+    document.getElementById('login-err').textContent = 'Signed out due to inactivity.';
+    document.getElementById('login-err').style.display = 'block';
+  }
 }
+
+// Restore session on page load/refresh
+window.addEventListener('DOMContentLoaded', () => {
+  const saved = loadSession();
+  if (saved?.username && saved?._pw) {
+    SESSION = saved;
+    showApp();
+  }
+});
 
 ['un-input','pw-input'].forEach(id => document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); }));
 
-function authHeaders() { return { 'x-username': SESSION.username, 'x-password': document.getElementById('pw-input').value || SESSION._pw || '', 'Content-Type': 'application/json' }; }
-
-// Store password for header use after login
-document.getElementById('pw-input').addEventListener('change', () => { if (SESSION) SESSION._pw = document.getElementById('pw-input').value; });
-const _origLogin = doLogin;
+function authHeaders() { return { 'x-username': SESSION.username, 'x-password': SESSION._pw || '', 'Content-Type': 'application/json' }; }
 
 async function loadLocations(inventoryItemIds = []) {
-  SESSION._pw = document.getElementById('pw-input').value;
   try {
     let url = '/api/locations';
     if (inventoryItemIds.length) url += '?inventoryItemIds=' + inventoryItemIds.join(',');
