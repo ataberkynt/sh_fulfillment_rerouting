@@ -182,11 +182,11 @@ app.post('/api/reroute', requireUser, async (req, res) => {
 
     console.log(`Reroute: foItems=${foLineItemCount} selected=${lineItems.length} hasPartial=${hasPartial} skipSplit=${skipSplit}`);
 
-    // Always send ALL selected items in one call.
-    // Shopify's split handles partial qty correctly — it splits off exactly what we ask,
-    // and the remainder stays in the original FO (which is fine, it stays at the store).
-    // We never need a second move — the split+move covers all selected items together.
+    console.log(`Final decision: skipSplit=${skipSplit}, lineItems=${JSON.stringify(lineItems)}, foLineItemCount=${foLineItemCount}`);
+    // When skipSplit=true: move the entire FO (all items move together)
+    // When skipSplit=false: split selected items into new FO, then move that new FO
     const result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, skipSplit);
+    console.log(`Reroute result: ${JSON.stringify(result?.movedFulfillmentOrder)}`);
 
     // Log the action
     logReroute({
@@ -201,7 +201,10 @@ app.post('/api/reroute', requireUser, async (req, res) => {
       newFulfillmentOrderId: result.newFulfillmentOrderId,
     });
 
-    res.json({ ok: true, fulfillmentOrder: result.movedFulfillmentOrder });
+    const warning = result.originalFulfillmentOrder?.lineItems?.edges?.length > 0
+      ? `${result.originalFulfillmentOrder.lineItems.edges.length} item(s) could not be moved — they may not be stocked at the destination location.`
+      : null;
+    res.json({ ok: true, fulfillmentOrder: result.movedFulfillmentOrder, warning });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
