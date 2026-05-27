@@ -140,10 +140,11 @@ async function getInventoryLevels(inventoryItemIds) {
 
 async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, skipSplit) {
   // skipSplit = true when ALL line items at FULL qty are selected — no split needed, just move
+  // lineItems = [] also means just move the FO directly (used for remaining FO after split)
   let finalFulfillmentOrderId = fulfillmentOrderId;
   let remainingFulfillmentOrderId = null;
 
-  if (!skipSplit) {
+  if (!skipSplit && lineItems.length > 0) {
     // Separate partial-qty items from full-qty items
     // Partial qty items need to be split off first
     // Full qty items that aren't the only items in the FO also need splitting
