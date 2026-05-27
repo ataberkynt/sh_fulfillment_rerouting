@@ -638,6 +638,7 @@ async function refreshLocationStock(inventoryItemIds) {
     pillEl.textContent = pillLabel;
 
     if (minQty <= 0) {
+      pillEl.textContent = 'No stock';
       pillEl.style.background = 'var(--danger-bg)';
       pillEl.style.color = 'var(--danger)';
       el.classList.add('no-stock');
@@ -793,13 +794,13 @@ async function doReroute() {
   confirm.style.display = 'flex';
   btn.disabled = false;
 
-  // Auto-refresh order 2s after successful reroute so FO IDs reflect Shopify's current state
+  // Auto-refresh order 3s after successful reroute so FO IDs reflect Shopify's current state
   if (!errors.length) {
     setTimeout(async () => {
       const raw = document.getElementById('order-input').value.trim().replace('#','');
       if (!raw || !SESSION) return;
       try {
-        const res = await fetch(`/api/order/${encodeURIComponent(raw)}`, {
+        const res = await fetch(`/api/order/${encodeURIComponent(raw)}?t=${Date.now()}`, {
           headers: { 'x-username': SESSION.username, 'x-password': SESSION._pw }
         });
         const json = await res.json();
