@@ -2,14 +2,13 @@
   "name": "fulfillment-rerouter",
   "version": "2.0.0",
   "description": "Internal Shopify fulfillment rerouting tool with audit log and per-user access control",
-  "main": "server.js",
-  "scripts": {
-    "start": "node server.js",
-    "dev": "node --watch server.js"
+  "main": "src/server.js",
+  "scripts": { "start": "node src/server.js", 
+"dev": "node --watch src/server.js"
   },
   "dependencies": {
     "express": "^4.18.2",
     "dotenv": "^16.3.1",
     "node-fetch": "^2.7.0"
   }
-}
+} 
