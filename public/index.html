@@ -358,9 +358,9 @@ function renderOrder() {
     });
   }
 
-  // Locked (other stores)
+  // Locked (other stores + warehouse) — visible but not editable
   if (lockedFOs.length > 0) {
-    html += `<p class="section-hd" style="margin-top:1.5rem">Other store's items — view only</p>`;
+    html += `<p class="section-hd" style="margin-top:1.5rem">Other items on this order — view only</p>`;
     lockedFOs.forEach(fo => {
       const locName = fo.assignedLocation?.name || 'Unknown';
       const lineItems = fo.lineItems?.edges?.map(e => e.node) || [];
@@ -415,7 +415,7 @@ function renderLineItem(li, foId, currentLocId, actionable) {
           <div class="li-name">${product?.title || 'Product'}</div>
           <div class="li-sub">${variant?.title !== 'Default Title' ? variant?.title + ' · ' : ''}SKU: ${variant?.sku || '—'} · Qty ${li.remainingQuantity}</div>
         </div>
-        <div class="li-right"><span class="lock-badge">🔒 Other store</span></div>
+        <div class="li-right"><span class="lock-badge">🔒 View only</span></div>
       </div>`;
   }
 
