@@ -185,6 +185,17 @@ async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, ski
           id
           status
           assignedLocation { name }
+          lineItems(first: 50) {
+            edges { node { id totalQuantity remainingQuantity } }
+          }
+        }
+        originalFulfillmentOrder {
+          id
+          status
+          assignedLocation { name }
+          lineItems(first: 50) {
+            edges { node { id totalQuantity remainingQuantity } }
+          }
         }
         userErrors { field message }
       }
@@ -194,10 +205,25 @@ async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, ski
   const moveErrors = moveData.fulfillmentOrderMove?.userErrors || [];
   if (moveErrors.length) throw new Error(`Move failed: ${moveErrors.map(e => e.message).join(', ')}`);
 
+  const moved = moveData.fulfillmentOrderMove?.movedFulfillmentOrder;
+  const original = moveData.fulfillmentOrderMove?.originalFulfillmentOrder;
+  
+  console.log(`Move result - moved FO: ${moved?.id} at ${moved?.assignedLocation?.name}, items: ${moved?.lineItems?.edges?.length}`);
+  if (original) console.log(`Original FO remaining: ${original?.id} at ${original?.assignedLocation?.name}, items: ${original?.lineItems?.edges?.length}`);
+
+  // If Shopify returned an originalFulfillmentOrder, it means not all items could move
+  // (e.g. inventory not stocked at destination for some items). We need to flag this.
+  if (original && original.lineItems?.edges?.length > 0) {
+    const movedCount = moved?.lineItems?.edges?.length || 0;
+    const stuckCount = original.lineItems.edges.length;
+    console.warn(`WARNING: ${stuckCount} line item(s) could not move and remain in original FO`);
+  }
+
   return {
-    movedFulfillmentOrder: moveData.fulfillmentOrderMove?.movedFulfillmentOrder,
+    movedFulfillmentOrder: moved,
     newFulfillmentOrderId: finalFulfillmentOrderId,
     remainingFulfillmentOrderId,
+    originalFulfillmentOrder: original,
   };
 }
 
