@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Audit Log — Fulfillment Rerouter</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root { --green: #96BF48; --green-dark: #6d9031; --bg: #f5f5f3; --surface: #fff; --border: #e5e5e2; --text: #1a1a18; --text2: #555550; --text3: #999992; --radius: 10px; --radius-sm: 6px; }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+    #login { min-height: 100vh; display: flex; align-items: center; justify-content: center; }
+    .login-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 2rem; width: 100%; max-width: 340px; }
+    .login-card h1 { font-size: 18px; font-weight: 600; margin-bottom: 4px; }
+    .login-card p { font-size: 13px; color: var(--text2); margin-bottom: 1.5rem; }
+    input { width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: inherit; font-size: 14px; outline: none; margin-bottom: 10px; }
+    input:focus { border-color: var(--green); }
+    button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-family: inherit; font-size: 14px; font-weight: 500; border: none; border-radius: var(--radius-sm); cursor: pointer; padding: 9px 16px; }
+    .btn-p { background: var(--green); color: white; width: 100%; }
+    .btn-p:hover { background: var(--green-dark); }
+    .btn-s { background: var(--bg); color: var(--text2); border: 1px solid var(--border); font-size: 13px; }
+    .err { font-size: 13px; color: #d63b3b; background: #fef2f2; border: 1px solid #fecaca; border-radius: var(--radius-sm); padding: 8px 12px; margin-top: 8px; display: none; }
+
+    #app { display: none; }
+    .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.5rem; height: 54px; display: flex; align-items: center; gap: 12px; }
+    .topbar h1 { font-size: 15px; font-weight: 600; flex: 1; }
+    .main { padding: 1.5rem; max-width: 1100px; margin: 0 auto; }
+
+    .filters { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1rem; display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
+    .filter-field { display: flex; flex-direction: column; gap: 4px; }
+    .filter-field label { font-size: 12px; font-weight: 500; color: var(--text2); }
+    .filter-field input { margin-bottom: 0; width: 180px; }
+
+    .stats { display: flex; gap: 12px; margin-bottom: 1rem; flex-wrap: wrap; }
+    .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; flex: 1; min-width: 140px; }
+    .stat-label { font-size: 11px; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 4px; }
+    .stat-val { font-size: 22px; font-weight: 600; }
+
+    .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead { background: var(--bg); }
+    th { text-align: left; padding: 10px 14px; font-size: 11px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    td { padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: var(--bg); }
+    .mono { font-family: 'DM Mono', monospace; font-size: 12px; }
+    .arrow { color: var(--text3); }
+    .username { font-weight: 500; }
+    .empty-row td { text-align: center; padding: 3rem; color: var(--text3); }
+
+    .pagination { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 1rem; font-size: 13px; color: var(--text2); }
+  </style>
+</head>
+<body>
+
+<div id="login">
+  <div class="login-card">
+    <h1>Audit log</h1>
+    <p>Admin access required.</p>
+    <input type="password" id="apw" placeholder="Admin password" />
+    <button class="btn-p" onclick="adminLogin()">Sign in</button>
+    <div class="err" id="a-err">Wrong password</div>
+  </div>
+</div>
+
+<div id="app">
+  <div class="topbar">
+    <h1>Fulfillment rerouter — Audit log</h1>
+    <button class="btn-s" onclick="exportCSV()">Export CSV</button>
+    <button class="btn-s" onclick="location.href='/'">← App</button>
+  </div>
+  <div class="main">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-label">Total reroutes</div><div class="stat-val" id="stat-total">—</div></div>
+      <div class="stat-card"><div class="stat-label">Showing</div><div class="stat-val" id="stat-showing">—</div></div>
+    </div>
+    <div class="filters">
+      <div class="filter-field"><label>Username</label><input type="text" id="f-user" placeholder="Filter by user" /></div>
+      <div class="filter-field"><label>Order</label><input type="text" id="f-order" placeholder="Filter by order" /></div>
+      <button class="btn-s" onclick="loadLogs()">Apply</button>
+      <button class="btn-s" onclick="clearFilters()">Clear</button>
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th><th>Timestamp</th><th>User</th><th>Store</th><th>Order</th>
+            <th>Item</th><th>Qty</th><th>From</th><th>To</th>
+          </tr>
+        </thead>
+        <tbody id="log-body"><tr class="empty-row"><td colspan="9">Loading…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="pagination">
+      <button class="btn-s" id="prev-btn" onclick="prevPage()" disabled>← Prev</button>
+      <span id="page-info"></span>
+      <button class="btn-s" id="next-btn" onclick="nextPage()">Next →</button>
+    </div>
+  </div>
+</div>
+
+<script>
+let ADMIN_PW = '';
+let logs = [];
+let total = 0;
+let page = 0;
+const PER_PAGE = 50;
+
+document.getElementById('apw').addEventListener('keydown', e => { if (e.key === 'Enter') adminLogin(); });
+
+async function adminLogin() {
+  const pw = document.getElementById('apw').value.trim();
+  const res = await fetch(`/api/admin/logs?limit=1`, { headers: { 'x-admin-password': pw } });
+  if (!res.ok) { document.getElementById('a-err').style.display = 'block'; return; }
+  ADMIN_PW = pw;
+  document.getElementById('login').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
+  loadLogs();
+}
+
+async function loadLogs() {
+  const username = document.getElementById('f-user').value.trim();
+  const orderName = document.getElementById('f-order').value.trim();
+  const params = new URLSearchParams({ limit: PER_PAGE, offset: page * PER_PAGE });
+  if (username) params.set('username', username);
+  if (orderName) params.set('orderName', orderName);
+
+  const res = await fetch(`/api/admin/logs?${params}`, { headers: { 'x-admin-password': ADMIN_PW } });
+  const json = await res.json();
+  logs = json.logs || [];
+  total = json.total || 0;
+
+  document.getElementById('stat-total').textContent = total.toLocaleString();
+  document.getElementById('stat-showing').textContent = logs.length;
+  document.getElementById('page-info').textContent = `Page ${page + 1} of ${Math.max(1, Math.ceil(total / PER_PAGE))}`;
+  document.getElementById('prev-btn').disabled = page === 0;
+  document.getElementById('next-btn').disabled = (page + 1) * PER_PAGE >= total;
+
+  const tbody = document.getElementById('log-body');
+  if (!logs.length) {
+    tbody.innerHTML = '<tr class="empty-row"><td colspan="9">No log entries found.</td></tr>';
+    return;
+  }
+
+  tbody.innerHTML = logs.map(row => `
+    <tr>
+      <td class="mono">${row.id}</td>
+      <td class="mono" style="white-space:nowrap">${formatDate(row.timestamp)}</td>
+      <td><span class="username">${row.username}</span></td>
+      <td style="color:var(--text2)">${row.user_location_name}</td>
+      <td class="mono">${row.order_name}</td>
+      <td>
+        <div style="font-weight:500">${row.item_name}</div>
+        ${row.variant ? `<div style="font-size:12px;color:var(--text2)">${row.variant}</div>` : ''}
+        ${row.sku ? `<div class="mono" style="color:var(--text3)">${row.sku}</div>` : ''}
+      </td>
+      <td class="mono">${row.qty_rerouted}</td>
+      <td style="color:var(--text2);max-width:160px">${row.from_location}</td>
+      <td style="max-width:160px">${row.to_location}</td>
+    </tr>`).join('');
+}
+
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })
+    + ' ' + d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+}
+
+function clearFilters() {
+  document.getElementById('f-user').value = '';
+  document.getElementById('f-order').value = '';
+  page = 0;
+  loadLogs();
+}
+
+function prevPage() { if (page > 0) { page--; loadLogs(); } }
+function nextPage() { page++; loadLogs(); }
+
+function exportCSV() {
+  if (!logs.length) return;
+  const headers = ['ID','Timestamp','Username','Store','Order','Item','Variant','SKU','Qty','From','To'];
+  const rows = logs.map(r => [r.id, r.timestamp, r.username, r.user_location_name, r.order_name, r.item_name, r.variant||'', r.sku||'', r.qty_rerouted, r.from_location, r.to_location].map(v => `"${String(v).replace(/"/g,'""')}"`).join(','));
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `reroute-log-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+}
+</script>
+</body>
+</html>
