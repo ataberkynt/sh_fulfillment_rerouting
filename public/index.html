@@ -169,7 +169,7 @@
     <div class="app-logo-fallback" id="login-logo-fb" style="display:none">
       <svg viewBox="0 0 24 24"><path d="M15.8 2.3c-.1-.1-.3-.1-.4 0l-1 .6c-.2-.6-.7-1.2-1.4-1.5-.6-.3-1.3-.4-2-.2-.3-.7-.8-1.2-1.5-1.2-.4 0-.8.2-1.1.5C8 .8 7.8 1.1 7.7 1.4c-.5-.1-1 0-1.4.3-.4.3-.7.7-.8 1.2l-4 12c-.1.2 0 .4.2.5l5.3 1.6 1.6 4.7c.1.2.3.3.5.2l9.6-2.9c.2-.1.3-.3.2-.5L15.8 2.3z"/></svg>
     </div>
-    <h1>Shopify Fulfillment Rerouter App</h1>
+    <h1>Smart Fulfillment Rerouter App</h1>
     <p><br>Fulfillment rerouting tool for store teams <br>Please sign in to continue.</p>
     <div class="field"><label>Username</label><input type="text" id="un-input" placeholder="Your username" autocomplete="username" /></div>
     <div class="field"><label>Password</label><input type="password" id="pw-input" placeholder="Your password" autocomplete="current-password" /></div>
@@ -312,7 +312,7 @@ async function loadLocations(inventoryItemIds = []) {
     const res = await fetch(url, { headers: { 'x-username': SESSION.username, 'x-password': SESSION._pw } });
     const json = await res.json();
     LOCATIONS = json.locations || [];
-    return json.stockByLocation || {};
+    return { stockByLocation: json.stockByLocation || {}, stockByLocationItem: json.stockByLocationItem || {} };
   } catch(e) { console.error('Could not load locations', e); return {}; }
 }
 
@@ -602,10 +602,23 @@ function updatePanel() {
 }
 
 async function refreshLocationStock(inventoryItemIds) {
-  const stockByLoc = await loadLocations(inventoryItemIds);
+  const { stockByLocation, stockByLocationItem } = await loadLocations(inventoryItemIds);
   const noStockMsg = document.getElementById('no-stock-msg');
-
   let allOutOfStock = inventoryItemIds.length > 0;
+
+  // Build a label for each selected item's stock at a location
+  // e.g. "6 · 3" for two items, or "6 avail." for one
+  function buildPillLabel(locId) {
+    if (!inventoryItemIds.length) return '';
+    const itemData = stockByLocationItem[locId] || {};
+    const qtys = inventoryItemIds.map(id => itemData[id] ?? 0);
+    if (inventoryItemIds.length === 1) {
+      const q = qtys[0];
+      return q <= 0 ? 'No stock' : q <= 2 ? `${q} left` : `${q} avail.`;
+    }
+    // Multiple items: show each qty joined by " · "
+    return qtys.join(' · ');
+  }
 
   for (const loc of LOCATIONS) {
     const safeId = loc.id.replace(/[^a-zA-Z0-9]/g,'_');
@@ -618,24 +631,23 @@ async function refreshLocationStock(inventoryItemIds) {
       el.classList.remove('no-stock');
       continue;
     }
-    const qty = stockByLoc[loc.id] ?? null;
-    if (qty === null) { pillEl.textContent = ''; continue; }
-    const multiItem = inventoryItemIds.length > 1;
-    const label = multiItem ? ' (min)' : '';
-    if (qty <= 0) {
-      pillEl.textContent = 'No stock';
+    const minQty = stockByLocation[loc.id] ?? null;
+    if (minQty === null) { pillEl.textContent = ''; continue; }
+
+    const pillLabel = buildPillLabel(loc.id);
+    pillEl.textContent = pillLabel;
+
+    if (minQty <= 0) {
       pillEl.style.background = 'var(--danger-bg)';
       pillEl.style.color = 'var(--danger)';
       el.classList.add('no-stock');
       if (selectedLocation === loc.id) { selectedLocation = null; el.classList.remove('selected'); updatePanel(); }
-    } else if (qty <= 2) {
-      pillEl.textContent = `${qty} left${label}`;
+    } else if (minQty <= 2) {
       pillEl.style.background = 'var(--warning-bg)';
       pillEl.style.color = 'var(--warning)';
       el.classList.remove('no-stock');
       allOutOfStock = false;
     } else {
-      pillEl.textContent = `${qty} avail.${label}`;
       pillEl.style.background = 'var(--success-bg)';
       pillEl.style.color = 'var(--success)';
       el.classList.remove('no-stock');
@@ -780,6 +792,37 @@ async function doReroute() {
 
   confirm.style.display = 'flex';
   btn.disabled = false;
+
+  // Auto-refresh order 2s after successful reroute so FO IDs reflect Shopify's current state
+  if (!errors.length) {
+    setTimeout(async () => {
+      const raw = document.getElementById('order-input').value.trim().replace('#','');
+      if (!raw || !SESSION) return;
+      try {
+        const res = await fetch(`/api/order/${encodeURIComponent(raw)}`, {
+          headers: { 'x-username': SESSION.username, 'x-password': SESSION._pw }
+        });
+        const json = await res.json();
+        if (res.ok) {
+          currentOrder = json.order;
+          inventoryByItem = json.inventoryByItem || {};
+          allLocations = json.allLocations || [];
+          renderOrder();
+          loadOrderHistory(json.order.name);
+          // Restore success message after re-render
+          const nc = document.getElementById('confirm-strip');
+          const nt = document.getElementById('confirm-text');
+          if (nc && nt) {
+            nt.innerHTML = '<strong>Order refreshed</strong> — fulfillment groups updated.';
+            nc.style.display = 'flex';
+            nc.style.background = 'var(--success-bg)';
+            nc.style.borderColor = '#bbf7d0';
+            nc.querySelector('svg').setAttribute('stroke', '#15803d');
+          }
+        }
+      } catch(e) { console.error('Auto-refresh failed', e); }
+    }, 2000);
+  }
 }
 </script>
 </body>
