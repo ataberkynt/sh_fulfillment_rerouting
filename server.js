@@ -43,16 +43,30 @@ app.post('/api/auth', (req, res) => {
 });
 
 // Get allowed destination locations (excluding warehouse and user's own store)
+// Optionally accepts ?inventoryItemIds=id1,id2 to return stock per location
 app.get('/api/locations', requireUser, async (req, res) => {
   try {
     const allowed = getAllowedLocationIds();
     const warehouse = getWarehouseLocationId();
     const userLocId = req.user.locationId;
 
-    // Exclude warehouse and user's own store from destinations
     const destinations = allowed.filter(id => id !== warehouse && id !== userLocId);
     const locations = await getLocations(destinations);
-    res.json({ locations });
+
+    // If inventory item IDs are provided, fetch stock at each destination
+    let stockByLocation = {}; // { locationId: minStockAcrossItems }
+    const rawIds = req.query.inventoryItemIds;
+    if (rawIds) {
+      const ids = rawIds.split(',').filter(Boolean);
+      const inv = await getInventoryLevels(ids);
+      for (const loc of locations) {
+        // Use minimum stock across all requested items (limiting factor)
+        const stocks = ids.map(id => inv[id]?.[loc.id] ?? 0);
+        stockByLocation[loc.id] = stocks.length ? Math.min(...stocks) : 0;
+      }
+    }
+
+    res.json({ locations, stockByLocation });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: err.message });
@@ -152,7 +166,13 @@ app.post('/api/reroute', requireUser, async (req, res) => {
       return res.status(403).json({ error: 'You can only reroute fulfillment orders assigned to your store' });
     }
 
-    const result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId);
+    // Pass FO totals so rerouteFulfillment can skip split when moving all items
+    const foLineItemCount = targetFO.lineItems?.edges?.length || 0;
+    const foTotalQty = (targetFO.lineItems?.edges || []).reduce((s, e) => s + (e.node.remainingQuantity || e.node.totalQuantity || 0), 0);
+    const selectedQtyTotal = lineItems.reduce((s, li) => s + (li.quantity || 0), 0);
+    // Skip split if we're moving ALL line items at their full quantity
+    const skipSplit = lineItems.length >= foLineItemCount && selectedQtyTotal >= foTotalQty;
+    const result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, skipSplit ? foLineItemCount : null, skipSplit ? foTotalQty : null);
 
     // Log the action
     logReroute({
