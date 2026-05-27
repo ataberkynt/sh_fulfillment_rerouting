@@ -1,221 +1,207 @@
-require('dotenv').config();
+const fetch = require('node-fetch');
 
-const express = require('express');
-const path = require('path');
-const { getOrderByName, getLocations, getInventoryLevels, rerouteFulfillment } = require('./shopify');
-const { authenticate, getWarehouseLocationId, getAllowedLocationIds } = require('./auth');
-const { logReroute, getLogs, getLogCount } = require('./db');
-
-const app = express();
-app.use(express.json());
-app.use(express.static(path.join(__dirname, 'public')));
-
-// ── Auth middleware ──────────────────────────────────────────────────────────
-
-function requireUser(req, res, next) {
-  const username = req.headers['x-username'];
-  const password = req.headers['x-password'];
-  if (!username || !password) return res.status(401).json({ error: 'Unauthorized' });
-  const user = authenticate(username, password);
-  if (!user) return res.status(401).json({ error: 'Unauthorized' });
-  req.user = user;
-  next();
+function getEndpoint() {
+  const domain = process.env.SHOPIFY_STORE_DOMAIN;
+  const version = process.env.SHOPIFY_API_VERSION || '2024-10';
+  return `https://${domain}/admin/api/${version}/graphql.json`;
 }
 
-function requireAdmin(req, res, next) {
-  const pw = req.headers['x-admin-password'];
-  if (!pw || pw !== process.env.ADMIN_PASSWORD) return res.status(401).json({ error: 'Unauthorized' });
-  next();
+async function shopifyGraphQL(query, variables = {}) {
+  const res = await fetch(getEndpoint(), {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Shopify-Access-Token': process.env.SHOPIFY_ADMIN_API_TOKEN,
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(`Shopify API error ${res.status}: ${text}`);
+  }
+
+  const json = await res.json();
+  if (json.errors) throw new Error(`GraphQL errors: ${JSON.stringify(json.errors)}`);
+  return json.data;
 }
 
-// ── Routes ───────────────────────────────────────────────────────────────────
-
-app.get('/api/health', (req, res) => {
-  res.json({ ok: true, store: process.env.SHOPIFY_STORE_DOMAIN });
-});
-
-// Login — returns user info including their assigned location
-app.post('/api/auth', (req, res) => {
-  const { username, password } = req.body;
-  const user = authenticate(username, password);
-  if (!user) return res.status(401).json({ error: 'Wrong username or password' });
-  res.json({ ok: true, username: user.username, locationId: user.locationId });
-});
-
-// Get allowed destination locations (excluding warehouse and user's own store)
-// Optionally accepts ?inventoryItemIds=id1,id2 to return stock per location
-app.get('/api/locations', requireUser, async (req, res) => {
-  try {
-    const allowed = getAllowedLocationIds();
-    const warehouse = getWarehouseLocationId();
-    const userLocId = req.user.locationId;
-
-    const destinations = allowed.filter(id => id !== warehouse && id !== userLocId);
-    const locations = await getLocations(destinations);
-
-    // If inventory item IDs are provided, fetch stock at each destination
-    let stockByLocation = {}; // { locationId: minStockAcrossItems }
-    const rawIds = req.query.inventoryItemIds;
-    if (rawIds) {
-      const ids = rawIds.split(',').filter(Boolean);
-      const inv = await getInventoryLevels(ids);
-      for (const loc of locations) {
-        // Use minimum stock across all requested items (limiting factor)
-        const stocks = ids.map(id => inv[id]?.[loc.id] ?? 0);
-        stockByLocation[loc.id] = stocks.length ? Math.min(...stocks) : 0;
+async function getOrderByName(orderName) {
+  const name = orderName.startsWith('#') ? orderName : `#${orderName}`;
+  const data = await shopifyGraphQL(`
+    query GetOrder($query: String!) {
+      orders(first: 1, query: $query) {
+        edges {
+          node {
+            id
+            name
+            displayFulfillmentStatus
+            createdAt
+            customer { displayName email }
+            fulfillmentOrders(first: 20) {
+              edges {
+                node {
+                  id
+                  status
+                  assignedLocation {
+                    name
+                    location { id name }
+                  }
+                  lineItems(first: 50) {
+                    edges {
+                      node {
+                        id
+                        totalQuantity
+                        remainingQuantity
+                        variant {
+                          id
+                          title
+                          sku
+                          product {
+                            title
+                            featuredImage { url }
+                          }
+                          inventoryItem { id }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
       }
     }
+  `, { query: `name:${name}` });
 
-    res.json({ locations, stockByLocation });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
+  return data?.orders?.edges?.[0]?.node || null;
+}
 
-// Get order — applies visibility rules based on user's location
-app.get('/api/order/:orderName', requireUser, async (req, res) => {
-  try {
-    const order = await getOrderByName(req.params.orderName);
-    if (!order) return res.status(404).json({ error: `Order ${req.params.orderName} not found` });
-
-    const warehouse = getWarehouseLocationId();
-    const userLocId = req.user.locationId;
-    const fulfillmentOrders = order.fulfillmentOrders?.edges?.map(e => e.node) || [];
-
-    // Classify each fulfillment order
-    // actionable = assigned to user's store
-    // locked = assigned to another store (not warehouse)
-    // warehouse = assigned to warehouse
-    const classified = fulfillmentOrders.map(fo => {
-      const foLocId = fo.assignedLocation?.location?.id;
-      let access = 'warehouse';
-      if (foLocId === userLocId) access = 'actionable';
-      else if (foLocId !== warehouse) access = 'locked'; // another store
-      return { ...fo, access };
-    });
-
-    // If ALL fulfillment orders are warehouse → block entirely
-    const allWarehouse = classified.every(fo => fo.access === 'warehouse');
-    if (allWarehouse) {
-      return res.status(403).json({
-        error: 'ACCESS_DENIED',
-        message: 'This order is fully assigned to the warehouse and cannot be accessed here.',
-      });
-    }
-
-    // Collect inventory item IDs only for actionable FOs
-    const inventoryItemIds = [];
-    for (const fo of classified) {
-      if (fo.access !== 'actionable') continue;
-      for (const liEdge of fo.lineItems?.edges || []) {
-        const invId = liEdge.node.variant?.inventoryItem?.id;
-        if (invId) inventoryItemIds.push(invId);
+async function getLocations(allowedIds = []) {
+  const data = await shopifyGraphQL(`
+    query {
+      locations(first: 50, includeInactive: false) {
+        edges {
+          node {
+            id
+            name
+            isActive
+            address { city countryCode }
+          }
+        }
       }
     }
+  `);
 
-    const inventoryByItem = await getInventoryLevels([...new Set(inventoryItemIds)]);
-
-    // Also fetch allowed location names for inventory display
-    const allowed = getAllowedLocationIds();
-    const allLocations = await getLocations(allowed);
-
-    res.json({ order: { ...order, fulfillmentOrders: { edges: classified.map(fo => ({ node: fo })) } }, inventoryByItem, allLocations });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+  let locations = data.locations.edges.map(e => e.node);
+  if (allowedIds.length) {
+    locations = locations.filter(l => allowedIds.includes(l.id));
   }
-});
+  return locations;
+}
 
-// Reroute — validates permissions then calls Shopify API
-app.post('/api/reroute', requireUser, async (req, res) => {
-  const { fulfillmentOrderId, lineItems, locationId, orderName, orderId, fromLocationName, toLocationName, itemDetails } = req.body;
+async function getInventoryLevels(inventoryItemIds) {
+  if (!inventoryItemIds.length) return {};
 
-  if (!fulfillmentOrderId || !lineItems?.length || !locationId) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
-
-  const warehouse = getWarehouseLocationId();
-  const allowed = getAllowedLocationIds();
-  const userLocId = req.user.locationId;
-
-  // Security: destination must be in allowed list and not warehouse or user's own store
-  if (!allowed.includes(locationId)) {
-    return res.status(403).json({ error: 'Destination location not allowed' });
-  }
-  if (locationId === warehouse) {
-    return res.status(403).json({ error: 'Cannot reroute to warehouse' });
-  }
-  if (locationId === userLocId) {
-    return res.status(403).json({ error: 'Cannot reroute to your own store' });
-  }
-
-  // Security: verify the fulfillment order is actually assigned to user's store
-  // We re-fetch the order to confirm — don't trust client
-  try {
-    const orderNameClean = orderName?.replace('#', '') || '';
-    const order = await getOrderByName(orderNameClean);
-    if (!order) return res.status(404).json({ error: 'Order not found' });
-
-    const fulfillmentOrders = order.fulfillmentOrders?.edges?.map(e => e.node) || [];
-    const targetFO = fulfillmentOrders.find(fo => fo.id === fulfillmentOrderId);
-    if (!targetFO) return res.status(403).json({ error: 'Fulfillment order not found on this order' });
-
-    const foLocId = targetFO.assignedLocation?.location?.id;
-    if (foLocId !== userLocId) {
-      return res.status(403).json({ error: 'You can only reroute fulfillment orders assigned to your store' });
+  const data = await shopifyGraphQL(`
+    query GetInventory($ids: [ID!]!) {
+      nodes(ids: $ids) {
+        ... on InventoryItem {
+          id
+          inventoryLevels(first: 50) {
+            edges {
+              node {
+                location { id name }
+                quantities(names: ["available"]) {
+                  name
+                  quantity
+                }
+              }
+            }
+          }
+        }
+      }
     }
+  `, { ids: inventoryItemIds });
 
-    // Pass FO totals so rerouteFulfillment can skip split when moving all items
-    const foLineItemCount = targetFO.lineItems?.edges?.length || 0;
-    const foTotalQty = (targetFO.lineItems?.edges || []).reduce((s, e) => s + (e.node.remainingQuantity || e.node.totalQuantity || 0), 0);
-    const selectedQtyTotal = lineItems.reduce((s, li) => s + (li.quantity || 0), 0);
-    // Skip split if we're moving ALL line items at their full quantity
-    const skipSplit = lineItems.length >= foLineItemCount && selectedQtyTotal >= foTotalQty;
-    const result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, skipSplit ? foLineItemCount : null, skipSplit ? foTotalQty : null);
+  const result = {};
+  for (const node of data.nodes || []) {
+    if (!node) continue;
+    result[node.id] = {};
+    for (const edge of node.inventoryLevels?.edges || []) {
+      const locId = edge.node.location.id;
+      const avail = edge.node.quantities?.find(q => q.name === 'available')?.quantity ?? 0;
+      result[node.id][locId] = avail;
+    }
+  }
+  return result;
+}
 
-    // Log the action
-    logReroute({
-      username: req.user.username,
-      userLocationName: targetFO.assignedLocation?.name || userLocId,
-      orderName: order.name,
-      orderId: order.id,
-      items: itemDetails || lineItems.map(li => ({ name: li.id, qty: li.quantity })),
-      fromLocation: fromLocationName || foLocId,
-      toLocation: toLocationName || locationId,
-      fulfillmentOrderId,
-      newFulfillmentOrderId: result.newFulfillmentOrderId,
+async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, foTotalLineItems, foTotalQuantity) {
+  // Skip split when rerouting ALL items at full qty — Shopify can't split in that case
+  const selectedQtyTotal = lineItems.reduce((sum, li) => sum + (li.quantity || 0), 0);
+  const needsSplit = !(
+    foTotalLineItems != null &&
+    foTotalQuantity != null &&
+    lineItems.length === foTotalLineItems &&
+    selectedQtyTotal >= foTotalQuantity
+  );
+
+  let newFulfillmentOrderId;
+
+  if (needsSplit) {
+    const splitData = await shopifyGraphQL(`
+      mutation FulfillmentOrderSplit($splits: [FulfillmentOrderSplitInput!]!) {
+        fulfillmentOrderSplit(fulfillmentOrderSplits: $splits) {
+          fulfillmentOrderSplits {
+            fulfillmentOrder {
+              id
+              status
+              lineItems(first: 50) {
+                edges { node { id totalQuantity } }
+              }
+            }
+            remainingFulfillmentOrder { id status }
+          }
+          userErrors { field message }
+        }
+      }
+    `, {
+      splits: [{ fulfillmentOrderId, fulfillmentOrderLineItems: lineItems }],
     });
 
-    res.json({ ok: true, fulfillmentOrder: result.movedFulfillmentOrder });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    const splitErrors = splitData.fulfillmentOrderSplit?.userErrors || [];
+    if (splitErrors.length) throw new Error(`Split failed: ${splitErrors.map(e => e.message).join(', ')}`);
+
+    newFulfillmentOrderId = splitData.fulfillmentOrderSplit?.fulfillmentOrderSplits?.[0]?.fulfillmentOrder?.id;
+    if (!newFulfillmentOrderId) throw new Error('Could not identify the split fulfillment order ID');
+  } else {
+    // Moving entire fulfillment order — no split needed
+    newFulfillmentOrderId = fulfillmentOrderId;
   }
-});
 
-// ── Admin routes ─────────────────────────────────────────────────────────────
+  // Step 2: Move
+  const moveData = await shopifyGraphQL(`
+    mutation FulfillmentOrderMove($id: ID!, $newLocationId: ID!) {
+      fulfillmentOrderMove(id: $id, newLocationId: $newLocationId) {
+        movedFulfillmentOrder {
+          id
+          status
+          assignedLocation { name }
+        }
+        userErrors { field message }
+      }
+    }
+  `, { id: newFulfillmentOrderId, newLocationId: locationId });
 
-app.get('/api/admin/logs', requireAdmin, (req, res) => {
-  const { limit = 100, offset = 0, username, orderName } = req.query;
-  const logs = getLogs({ limit: Number(limit), offset: Number(offset), username, orderName });
-  const total = getLogCount();
-  res.json({ logs, total });
-});
+  const moveErrors = moveData.fulfillmentOrderMove?.userErrors || [];
+  if (moveErrors.length) throw new Error(`Move failed: ${moveErrors.map(e => e.message).join(', ')}`);
 
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public/admin.html'));
-});
+  return {
+    movedFulfillmentOrder: moveData.fulfillmentOrderMove?.movedFulfillmentOrder,
+    newFulfillmentOrderId,
+  };
+}
 
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public/index.html'));
-});
-
-// ── Start ─────────────────────────────────────────────────────────────────────
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Fulfillment rerouter v2 running on http://localhost:${PORT}`);
-  console.log(`Store: ${process.env.SHOPIFY_STORE_DOMAIN}`);
-  console.log(`Warehouse: ${getWarehouseLocationId()}`);
-});
+module.exports = { getOrderByName, getLocations, getInventoryLevels, rerouteFulfillment };
