@@ -261,14 +261,16 @@ function authHeaders() { return { 'x-username': SESSION.username, 'x-password': 
 document.getElementById('pw-input').addEventListener('change', () => { if (SESSION) SESSION._pw = document.getElementById('pw-input').value; });
 const _origLogin = doLogin;
 
-async function loadLocations() {
-  // Store password for subsequent requests
+async function loadLocations(inventoryItemIds = []) {
   SESSION._pw = document.getElementById('pw-input').value;
   try {
-    const res = await fetch('/api/locations', { headers: { 'x-username': SESSION.username, 'x-password': SESSION._pw } });
+    let url = '/api/locations';
+    if (inventoryItemIds.length) url += '?inventoryItemIds=' + inventoryItemIds.join(',');
+    const res = await fetch(url, { headers: { 'x-username': SESSION.username, 'x-password': SESSION._pw } });
     const json = await res.json();
     LOCATIONS = json.locations || [];
-  } catch(e) { console.error('Could not load locations', e); }
+    return json.stockByLocation || {};
+  } catch(e) { console.error('Could not load locations', e); return {}; }
 }
 
 // ── Order lookup ──────────────────────────────────────────────────────────────
@@ -446,6 +448,7 @@ function renderReroutePanel() {
       <div class="loc-opt" id="loc-${loc.id.replace(/[^a-zA-Z0-9]/g,'_')}" data-loc-id="${loc.id}" onclick="selectLocation('${loc.id}',this)">
         <div class="loc-radio"><div class="loc-dot"></div></div>
         <span class="loc-name">${loc.name}</span>
+        <span class="loc-stock-pill"></span>
       </div>`;
   }).join('');
 
@@ -525,10 +528,62 @@ function updatePanel() {
   const allSelected = getAllSelected();
   if (allSelected.length === 0) {
     tags.innerHTML = '<span style="font-size:13px;color:var(--text3)">No items selected</span>';
+    refreshLocationStock([]);
   } else {
     tags.innerHTML = allSelected.map(i => `<span class="tag">${i.name}${i.qty < i.maxQty ? ` (${i.qty}/${i.maxQty})` : ''}</span>`).join('');
+    // Gather inventory item IDs for selected items to show live stock at destinations
+    const invIds = [];
+    const o = currentOrder;
+    if (o) {
+      for (const foEdge of o.fulfillmentOrders?.edges || []) {
+        const fo = foEdge.node;
+        for (const liEdge of fo.lineItems?.edges || []) {
+          const li = liEdge.node;
+          if (selectedItems[fo.id]?.[li.id] !== undefined) {
+            const invId = li.variant?.inventoryItem?.id;
+            if (invId) invIds.push(invId);
+          }
+        }
+      }
+    }
+    refreshLocationStock(invIds);
   }
   btn.disabled = !(allSelected.length > 0 && selectedLocation);
+}
+
+async function refreshLocationStock(inventoryItemIds) {
+  const stockByLoc = await loadLocations(inventoryItemIds);
+  // Update each location option with stock pill
+  for (const loc of LOCATIONS) {
+    const safeId = loc.id.replace(/[^a-zA-Z0-9]/g,'_');
+    const el = document.getElementById('loc-' + safeId);
+    if (!el) continue;
+    const pillEl = el.querySelector('.loc-stock-pill');
+    if (!pillEl) continue;
+    if (!inventoryItemIds.length) {
+      pillEl.textContent = '';
+      el.classList.remove('no-stock');
+      return;
+    }
+    const qty = stockByLoc[loc.id] ?? null;
+    if (qty === null) { pillEl.textContent = ''; return; }
+    if (qty === 0) {
+      pillEl.textContent = 'No stock';
+      pillEl.style.background = 'var(--danger-bg)';
+      pillEl.style.color = 'var(--danger)';
+      el.classList.add('no-stock');
+    } else if (qty <= 2) {
+      pillEl.textContent = `${qty} left`;
+      pillEl.style.background = 'var(--warning-bg)';
+      pillEl.style.color = 'var(--warning)';
+      el.classList.remove('no-stock');
+    } else {
+      pillEl.textContent = `${qty} in stock`;
+      pillEl.style.background = 'var(--success-bg)';
+      pillEl.style.color = 'var(--success)';
+      el.classList.remove('no-stock');
+    }
+  }
 }
 
 function getAllSelected() {
