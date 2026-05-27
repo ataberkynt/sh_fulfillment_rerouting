@@ -201,5 +201,4 @@ async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, ski
   };
 }
 
-
 module.exports = { getOrderByName, getLocations, getInventoryLevels, rerouteFulfillment };
