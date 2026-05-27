@@ -138,19 +138,15 @@ async function getInventoryLevels(inventoryItemIds) {
   return result;
 }
 
-async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, foTotalLineItems, foTotalQuantity) {
-  // Skip split when rerouting ALL items at full qty — Shopify can't split in that case
-  const selectedQtyTotal = lineItems.reduce((sum, li) => sum + (li.quantity || 0), 0);
-  const needsSplit = !(
-    foTotalLineItems != null &&
-    foTotalQuantity != null &&
-    lineItems.length === foTotalLineItems &&
-    selectedQtyTotal >= foTotalQuantity
-  );
+async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, skipSplit) {
+  // skipSplit = true when ALL line items at FULL qty are selected — no split needed, just move
+  let finalFulfillmentOrderId = fulfillmentOrderId;
+  let remainingFulfillmentOrderId = null;
 
-  let newFulfillmentOrderId;
-
-  if (needsSplit) {
+  if (!skipSplit) {
+    // Separate partial-qty items from full-qty items
+    // Partial qty items need to be split off first
+    // Full qty items that aren't the only items in the FO also need splitting
     const splitData = await shopifyGraphQL(`
       mutation FulfillmentOrderSplit($splits: [FulfillmentOrderSplitInput!]!) {
         fulfillmentOrderSplit(fulfillmentOrderSplits: $splits) {
@@ -174,14 +170,14 @@ async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, foT
     const splitErrors = splitData.fulfillmentOrderSplit?.userErrors || [];
     if (splitErrors.length) throw new Error(`Split failed: ${splitErrors.map(e => e.message).join(', ')}`);
 
-    newFulfillmentOrderId = splitData.fulfillmentOrderSplit?.fulfillmentOrderSplits?.[0]?.fulfillmentOrder?.id;
-    if (!newFulfillmentOrderId) throw new Error('Could not identify the split fulfillment order ID');
-  } else {
-    // Moving entire fulfillment order — no split needed
-    newFulfillmentOrderId = fulfillmentOrderId;
+    const splitResult = splitData.fulfillmentOrderSplit?.fulfillmentOrderSplits?.[0];
+    finalFulfillmentOrderId = splitResult?.fulfillmentOrder?.id;
+    remainingFulfillmentOrderId = splitResult?.remainingFulfillmentOrder?.id;
+
+    if (!finalFulfillmentOrderId) throw new Error('Could not identify the split fulfillment order ID');
   }
 
-  // Step 2: Move
+  // Move the split (or whole) FO to the new location
   const moveData = await shopifyGraphQL(`
     mutation FulfillmentOrderMove($id: ID!, $newLocationId: ID!) {
       fulfillmentOrderMove(id: $id, newLocationId: $newLocationId) {
@@ -193,15 +189,17 @@ async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, foT
         userErrors { field message }
       }
     }
-  `, { id: newFulfillmentOrderId, newLocationId: locationId });
+  `, { id: finalFulfillmentOrderId, newLocationId: locationId });
 
   const moveErrors = moveData.fulfillmentOrderMove?.userErrors || [];
   if (moveErrors.length) throw new Error(`Move failed: ${moveErrors.map(e => e.message).join(', ')}`);
 
   return {
     movedFulfillmentOrder: moveData.fulfillmentOrderMove?.movedFulfillmentOrder,
-    newFulfillmentOrderId,
+    newFulfillmentOrderId: finalFulfillmentOrderId,
+    remainingFulfillmentOrderId,
   };
 }
+
 
 module.exports = { getOrderByName, getLocations, getInventoryLevels, rerouteFulfillment };
