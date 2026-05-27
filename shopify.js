@@ -138,50 +138,42 @@ async function getInventoryLevels(inventoryItemIds) {
   return result;
 }
 
-async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, skipSplit) {
-  // skipSplit = true when ALL line items at FULL qty are selected — no split needed, just move
-  // lineItems = [] also means just move the FO directly (used for remaining FO after split)
-  let finalFulfillmentOrderId = fulfillmentOrderId;
-  let remainingFulfillmentOrderId = null;
+// Use fulfillmentOrderMove with fulfillmentOrderLineItems parameter
+// This is Shopify's RECOMMENDED way to move specific items at specific quantities
+// — it handles the split internally and atomically.
+//
+// When fulfillmentOrderLineItems is provided:
+//   - Only those items at those quantities are moved
+//   - Shopify auto-splits internally if needed
+//   - Returns movedFulfillmentOrder (containing moved items)
+//   - Returns originalFulfillmentOrder (containing the items that stayed behind)
+//   - Returns remainingFulfillmentOrder (if any items couldn't be moved due to constraints)
+//
+// When fulfillmentOrderLineItems is omitted:
+//   - Entire FO moves
+async function moveFulfillmentItems(fulfillmentOrderId, lineItems, locationId) {
+  // Build variables — only include fulfillmentOrderLineItems if we have specific items
+  const variables = {
+    id: fulfillmentOrderId,
+    newLocationId: locationId,
+  };
 
-  if (!skipSplit && lineItems.length > 0) {
-    // Separate partial-qty items from full-qty items
-    // Partial qty items need to be split off first
-    // Full qty items that aren't the only items in the FO also need splitting
-    const splitData = await shopifyGraphQL(`
-      mutation FulfillmentOrderSplit($splits: [FulfillmentOrderSplitInput!]!) {
-        fulfillmentOrderSplit(fulfillmentOrderSplits: $splits) {
-          fulfillmentOrderSplits {
-            fulfillmentOrder {
-              id
-              status
-              lineItems(first: 50) {
-                edges { node { id totalQuantity } }
-              }
-            }
-            remainingFulfillmentOrder { id status }
-          }
-          userErrors { field message }
-        }
-      }
-    `, {
-      splits: [{ fulfillmentOrderId, fulfillmentOrderLineItems: lineItems }],
-    });
-
-    const splitErrors = splitData.fulfillmentOrderSplit?.userErrors || [];
-    if (splitErrors.length) throw new Error(`Split failed: ${splitErrors.map(e => e.message).join(', ')}`);
-
-    const splitResult = splitData.fulfillmentOrderSplit?.fulfillmentOrderSplits?.[0];
-    finalFulfillmentOrderId = splitResult?.fulfillmentOrder?.id;
-    remainingFulfillmentOrderId = splitResult?.remainingFulfillmentOrder?.id;
-
-    if (!finalFulfillmentOrderId) throw new Error('Could not identify the split fulfillment order ID');
+  if (lineItems && lineItems.length > 0) {
+    variables.fulfillmentOrderLineItems = lineItems.map(li => ({
+      id: li.id,
+      quantity: li.quantity,
+    }));
   }
 
-  // Move the split (or whole) FO to the new location
-  const moveData = await shopifyGraphQL(`
-    mutation FulfillmentOrderMove($id: ID!, $newLocationId: ID!) {
-      fulfillmentOrderMove(id: $id, newLocationId: $newLocationId) {
+  // Build query with conditional parameter
+  const hasLineItems = lineItems && lineItems.length > 0;
+  const query = `
+    mutation FulfillmentOrderMove($id: ID!, $newLocationId: ID!${hasLineItems ? ', $fulfillmentOrderLineItems: [FulfillmentOrderLineItemInput!]' : ''}) {
+      fulfillmentOrderMove(
+        id: $id
+        newLocationId: $newLocationId
+        ${hasLineItems ? 'fulfillmentOrderLineItems: $fulfillmentOrderLineItems' : ''}
+      ) {
         movedFulfillmentOrder {
           id
           status
@@ -198,35 +190,41 @@ async function rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, ski
             edges { node { id totalQuantity remainingQuantity } }
           }
         }
+        remainingFulfillmentOrder {
+          id
+          status
+          assignedLocation { name }
+          lineItems(first: 50) {
+            edges { node { id totalQuantity remainingQuantity } }
+          }
+        }
         userErrors { field message }
       }
     }
-  `, { id: finalFulfillmentOrderId, newLocationId: locationId });
+  `;
 
-  const moveErrors = moveData.fulfillmentOrderMove?.userErrors || [];
-  if (moveErrors.length) throw new Error(`Move failed: ${moveErrors.map(e => e.message).join(', ')}`);
+  console.log(`MOVE call: foId=${fulfillmentOrderId} to=${locationId} items=${JSON.stringify(lineItems)}`);
 
-  const moved = moveData.fulfillmentOrderMove?.movedFulfillmentOrder;
-  const original = moveData.fulfillmentOrderMove?.originalFulfillmentOrder;
-  
-  console.log(`Move result - moved FO: ${moved?.id} at ${moved?.assignedLocation?.name}, items: ${moved?.lineItems?.edges?.length}`);
-  if (original) console.log(`Original FO remaining: ${original?.id} at ${original?.assignedLocation?.name}, items: ${original?.lineItems?.edges?.length}`);
+  const data = await shopifyGraphQL(query, variables);
 
-  // If Shopify returned an originalFulfillmentOrder, it means not all items could move
-  // (e.g. inventory not stocked at destination for some items). We need to flag this.
-  if (original && original.lineItems?.edges?.length > 0) {
-    const movedCount = moved?.lineItems?.edges?.length || 0;
-    const stuckCount = original.lineItems.edges.length;
-    console.warn(`WARNING: ${stuckCount} line item(s) could not move and remain in original FO`);
-  }
+  const errors = data.fulfillmentOrderMove?.userErrors || [];
+  if (errors.length) throw new Error(`Move failed: ${errors.map(e => e.message).join(', ')}`);
+
+  const moved = data.fulfillmentOrderMove?.movedFulfillmentOrder;
+  const original = data.fulfillmentOrderMove?.originalFulfillmentOrder;
+  const remaining = data.fulfillmentOrderMove?.remainingFulfillmentOrder;
+
+  console.log(`MOVE result:`);
+  console.log(`  moved FO ${moved?.id} → ${moved?.assignedLocation?.name}, items: ${moved?.lineItems?.edges?.length || 0}`);
+  if (original) console.log(`  original FO ${original?.id} → ${original?.assignedLocation?.name}, items: ${original?.lineItems?.edges?.length || 0}`);
+  if (remaining) console.log(`  remaining FO ${remaining?.id} → ${remaining?.assignedLocation?.name}, items: ${remaining?.lineItems?.edges?.length || 0}`);
 
   return {
     movedFulfillmentOrder: moved,
-    newFulfillmentOrderId: finalFulfillmentOrderId,
-    remainingFulfillmentOrderId,
     originalFulfillmentOrder: original,
+    remainingFulfillmentOrder: remaining,
+    newFulfillmentOrderId: moved?.id,
   };
 }
 
-
-module.exports = { getOrderByName, getLocations, getInventoryLevels, rerouteFulfillment };
+module.exports = { getOrderByName, getLocations, getInventoryLevels, moveFulfillmentItems };
