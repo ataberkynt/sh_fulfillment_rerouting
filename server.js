@@ -88,12 +88,18 @@ app.get('/api/order/:orderName', requireUser, async (req, res) => {
     const userLocId = req.user.locationId;
     const fulfillmentOrders = order.fulfillmentOrders?.edges?.map(e => e.node) || [];
 
+    // Filter out ghost FOs with 0 remaining quantity on all line items (Shopify split remnants)
+    const nonEmptyFOs = fulfillmentOrders.filter(fo => {
+      const items = fo.lineItems?.edges || [];
+      return items.some(e => (e.node.remainingQuantity || 0) > 0);
+    });
+
     // Classify each fulfillment order
     // actionable = assigned to user's store
     // locked = assigned to another store OR warehouse (visible but not editable)
-    const classified = fulfillmentOrders.map(fo => {
+    const classified = nonEmptyFOs.map(fo => {
       const foLocId = fo.assignedLocation?.location?.id;
-      let access = 'locked'; // default: locked (other store or warehouse)
+      let access = 'locked';
       if (foLocId === userLocId) access = 'actionable';
       return { ...fo, access };
     });
