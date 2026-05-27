@@ -194,6 +194,12 @@ app.post('/api/reroute', requireUser, async (req, res) => {
   }
 });
 
+// Order reroute history — visible to any logged-in user for their order lookup
+app.get('/api/order-history/:orderName', requireUser, (req, res) => {
+  const logs = getLogs({ orderName: req.params.orderName, limit: 50 });
+  res.json({ logs });
+});
+
 // ── Admin routes ─────────────────────────────────────────────────────────────
 
 app.get('/api/admin/logs', requireAdmin, (req, res) => {
