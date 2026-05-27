@@ -38,7 +38,7 @@ async function getOrderByName(orderName) {
             displayFulfillmentStatus
             createdAt
             customer { displayName email }
-            fulfillmentOrders(first: 20) {
+            fulfillmentOrders(first: 20, query: "status:open OR status:in_progress OR status:on_hold") {
               edges {
                 node {
                   id
