@@ -154,6 +154,18 @@
     .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin 0.6s linear infinite; display: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
 
+    /* ── Floating copyright in app view ── */
+    #app-copyright {
+      position: fixed;
+      bottom: 12px;
+      right: 16px;
+      font-size: 11px;
+      color: var(--text3);
+      pointer-events: none;
+      display: none;
+      z-index: 5;
+    }
+
     @media (max-width: 480px) {
       .order-meta { grid-template-columns: 1fr; }
       .search-row { flex-direction: column; }
@@ -186,7 +198,7 @@
     <div class="topbar-logo-fallback" id="topbar-logo-fb" style="display:none">
       <svg viewBox="0 0 24 24"><path d="M15.8 2.3c-.1-.1-.3-.1-.4 0l-1 .6c-.2-.6-.7-1.2-1.4-1.5-.6-.3-1.3-.4-2-.2-.3-.7-.8-1.2-1.5-1.2-.4 0-.8.2-1.1.5C8 .8 7.8 1.1 7.7 1.4c-.5-.1-1 0-1.4.3-.4.3-.7.7-.8 1.2l-4 12c-.1.2 0 .4.2.5l5.3 1.6 1.6 4.7c.1.2.3.3.5.2l9.6-2.9c.2-.1.3-.3.2-.5L15.8 2.3z"/></svg>
     </div>
-    <span class="topbar-title">Fulfillment rerouter</span>
+    <span class="topbar-title">Shopify Fulfillment Rerouter</span>
     <div class="topbar-user">
       <span class="user-chip" id="user-chip"></span>
       <button class="logout-btn" onclick="doLogout()">Sign out</button>
@@ -196,7 +208,7 @@
   <div class="main">
     <div class="search-card">
       <div class="search-row">
-        <input type="text" id="order-input" placeholder="Order number (e.g. 4521)" />
+        <input type="text" id="order-input" placeholder="Order number (e.g. M543210)" />
         <button class="btn-primary" onclick="lookupOrder()" id="lookup-btn">
           Look up<div class="spinner" id="lookup-spinner"></div>
         </button>
@@ -210,6 +222,9 @@
     </div>
   </div>
 </div>
+
+<!-- Floating copyright shown only when logged in -->
+<div id="app-copyright">© 2026 Ataberk Yanut · Mavi Jeans</div>
 
 <script>
 let SESSION = null; // { username, locationId, _pw }
@@ -272,6 +287,7 @@ function showApp() {
   document.getElementById('login-screen').style.display = 'none';
   document.getElementById('app').style.display = 'block';
   document.getElementById('user-chip').textContent = SESSION.username;
+  document.getElementById('app-copyright').style.display = 'block';
   resetInactivityTimer();
   loadLocations();
 }
@@ -283,6 +299,7 @@ function doLogout(expired = false) {
   clearTimeout(inactivityTimer);
   document.getElementById('login-screen').style.display = 'flex';
   document.getElementById('app').style.display = 'none';
+  document.getElementById('app-copyright').style.display = 'none';
   document.getElementById('order-area').innerHTML = '';
   document.getElementById('un-input').value = '';
   document.getElementById('pw-input').value = '';
