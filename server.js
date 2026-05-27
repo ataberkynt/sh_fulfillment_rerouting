@@ -194,10 +194,22 @@ app.post('/api/reroute', requireUser, async (req, res) => {
     console.log(`Reroute: foItems=${foLineItemCount} selected=${lineItems.length} hasPartial=${hasPartial} skipSplit=${skipSplit}`);
 
     console.log(`Final decision: skipSplit=${skipSplit}, lineItems=${JSON.stringify(lineItems)}, foLineItemCount=${foLineItemCount}`);
-    // When skipSplit=true: move the entire FO (all items move together)
-    // When skipSplit=false: split selected items into new FO, then move that new FO
+
     const result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, skipSplit);
     console.log(`Reroute result: ${JSON.stringify(result?.movedFulfillmentOrder)}`);
+
+    // If Shopify split created a remaining FO (items not included in split),
+    // move it to the same destination as well
+    if (!skipSplit && result.remainingFulfillmentOrderId) {
+      console.log(`Moving remaining FO ${result.remainingFulfillmentOrderId} to same destination`);
+      try {
+        const remainResult = await rerouteFulfillment(result.remainingFulfillmentOrderId, [], locationId, true);
+        console.log(`Remaining FO move result: ${JSON.stringify(remainResult?.movedFulfillmentOrder)}`);
+      } catch(remainErr) {
+        console.error(`Remaining FO move failed: ${remainErr.message}`);
+        // Don't throw — the primary move succeeded
+      }
+    }
 
     // Log the action
     logReroute({
