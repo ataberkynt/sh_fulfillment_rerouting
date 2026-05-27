@@ -168,41 +168,25 @@ app.post('/api/reroute', requireUser, async (req, res) => {
     const foLineItemEdges = targetFO.lineItems?.edges || [];
     const foLineItemCount = foLineItemEdges.length;
 
-    // Build a map of remainingQty per line item for comparison
+    // Build a map of remainingQty per line item
     const foQtyMap = {};
     for (const e of foLineItemEdges) {
       foQtyMap[e.node.id] = e.node.remainingQuantity || e.node.totalQuantity || 0;
     }
 
-    // Separate selected items into:
-    // - partialItems: qty < remainingQty (MUST be split)
-    // - fullItems: qty === remainingQty
-    const partialItems = lineItems.filter(li => li.quantity < (foQtyMap[li.id] || li.quantity));
-    const fullItems = lineItems.filter(li => li.quantity >= (foQtyMap[li.id] || li.quantity));
+    // Check if any item has a partial qty selected
+    const hasPartial = lineItems.some(li => li.quantity < (foQtyMap[li.id] || li.quantity));
     const allSelected = lineItems.length >= foLineItemCount;
-    const skipSplit = allSelected && partialItems.length === 0;
+    // Only skip split when ALL items selected AND none are partial
+    const skipSplit = allSelected && !hasPartial;
 
-    console.log(`Reroute: foItems=${foLineItemCount} selected=${lineItems.length} partial=${partialItems.length} full=${fullItems.length} skipSplit=${skipSplit}`);
+    console.log(`Reroute: foItems=${foLineItemCount} selected=${lineItems.length} hasPartial=${hasPartial} skipSplit=${skipSplit}`);
 
-    let result;
-
-    if (skipSplit) {
-      // All items at full qty — just move the whole FO
-      result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, true);
-    } else if (partialItems.length > 0 && fullItems.length > 0) {
-      // Mixed: some partial, some full
-      // Step 1: Split+move partial items
-      result = await rerouteFulfillment(fulfillmentOrderId, partialItems, locationId, false);
-      // Step 2: The remaining FO now only has full-qty items — move it too
-      // result.remainingFulfillmentOrderId is the original FO with the full items left
-      if (result.remainingFulfillmentOrderId) {
-        const result2 = await rerouteFulfillment(result.remainingFulfillmentOrderId, fullItems, locationId, true);
-        result.movedFulfillmentOrder2 = result2.movedFulfillmentOrder;
-      }
-    } else {
-      // Only partial items, or only full items but not all FO items — split needed
-      result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, false);
-    }
+    // Always send ALL selected items in one call.
+    // Shopify's split handles partial qty correctly — it splits off exactly what we ask,
+    // and the remainder stays in the original FO (which is fine, it stays at the store).
+    // We never need a second move — the split+move covers all selected items together.
+    const result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, skipSplit);
 
     // Log the action
     logReroute({
