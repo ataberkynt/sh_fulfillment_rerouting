@@ -198,17 +198,20 @@ app.post('/api/reroute', requireUser, async (req, res) => {
     const result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, skipSplit);
     console.log(`Reroute result: ${JSON.stringify(result?.movedFulfillmentOrder)}`);
 
-    // If Shopify split created a remaining FO (items not included in split),
-    // move it to the same destination as well
-    if (!skipSplit && result.remainingFulfillmentOrderId) {
-      console.log(`Moving remaining FO ${result.remainingFulfillmentOrderId} to same destination`);
+    // Only move the remaining FO if the user selected ALL line items from the original FO
+    // (meaning they want everything moved, but a partial qty forced a split)
+    // If user selected a subset of items, the remaining FO should stay at the store
+    const selectedAllLineItems = lineItems.length >= foLineItemCount;
+    if (!skipSplit && result.remainingFulfillmentOrderId && selectedAllLineItems) {
+      console.log(`Moving remaining FO ${result.remainingFulfillmentOrderId} to same destination (all items selected)`);
       try {
         const remainResult = await rerouteFulfillment(result.remainingFulfillmentOrderId, [], locationId, true);
         console.log(`Remaining FO move result: ${JSON.stringify(remainResult?.movedFulfillmentOrder)}`);
       } catch(remainErr) {
         console.error(`Remaining FO move failed: ${remainErr.message}`);
-        // Don't throw — the primary move succeeded
       }
+    } else if (!skipSplit && result.remainingFulfillmentOrderId && !selectedAllLineItems) {
+      console.log(`Remaining FO left in place — user only selected ${lineItems.length} of ${foLineItemCount} line items`);
     }
 
     // Log the action
