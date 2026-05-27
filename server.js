@@ -85,22 +85,20 @@ app.get('/api/order/:orderName', requireUser, async (req, res) => {
 
     // Classify each fulfillment order
     // actionable = assigned to user's store
-    // locked = assigned to another store (not warehouse)
-    // warehouse = assigned to warehouse
+    // locked = assigned to another store OR warehouse (visible but not editable)
     const classified = fulfillmentOrders.map(fo => {
       const foLocId = fo.assignedLocation?.location?.id;
-      let access = 'warehouse';
+      let access = 'locked'; // default: locked (other store or warehouse)
       if (foLocId === userLocId) access = 'actionable';
-      else if (foLocId !== warehouse) access = 'locked'; // another store
       return { ...fo, access };
     });
 
-    // If ALL fulfillment orders are warehouse → block entirely
-    const allWarehouse = classified.every(fo => fo.access === 'warehouse');
-    if (allWarehouse) {
+    // If NO fulfillment orders are actionable → block entirely
+    const hasActionable = classified.some(fo => fo.access === 'actionable');
+    if (!hasActionable) {
       return res.status(403).json({
         error: 'ACCESS_DENIED',
-        message: 'This order is fully assigned to the warehouse and cannot be accessed here.',
+        message: 'This order has no items assigned to your store.',
       });
     }
 
@@ -170,8 +168,12 @@ app.post('/api/reroute', requireUser, async (req, res) => {
     const foLineItemCount = targetFO.lineItems?.edges?.length || 0;
     const foTotalQty = (targetFO.lineItems?.edges || []).reduce((s, e) => s + (e.node.remainingQuantity || e.node.totalQuantity || 0), 0);
     const selectedQtyTotal = lineItems.reduce((s, li) => s + (li.quantity || 0), 0);
-    // Skip split if we're moving ALL line items at their full quantity
-    const skipSplit = lineItems.length >= foLineItemCount && selectedQtyTotal >= foTotalQty;
+    // Only skip split when ALL line items are selected AND at their full remaining quantity
+    // Any partial qty selection requires a split even if all line items are included
+    const allLineItemsSelected = lineItems.length >= foLineItemCount;
+    const fullQtySelected = selectedQtyTotal >= foTotalQty;
+    const skipSplit = allLineItemsSelected && fullQtySelected;
+    console.log(`Reroute: foItems=${foLineItemCount} selected=${lineItems.length} foQty=${foTotalQty} selectedQty=${selectedQtyTotal} skipSplit=${skipSplit}`);
     const result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, skipSplit ? foLineItemCount : null, skipSplit ? foTotalQty : null);
 
     // Log the action
