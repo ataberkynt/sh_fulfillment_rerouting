@@ -4,456 +4,155 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Fulfillment Rerouter</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet" />
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
     :root {
-      --green: #96BF48;
-      --green-dark: #6d9031;
-      --green-light: #f2f7ea;
-      --bg: #f5f5f3;
-      --surface: #ffffff;
-      --border: #e5e5e2;
-      --border-strong: #c8c8c4;
-      --text: #1a1a18;
-      --text-2: #555550;
-      --text-3: #999992;
-      --danger: #d63b3b;
-      --danger-bg: #fef2f2;
-      --warning: #b45309;
-      --warning-bg: #fffbeb;
-      --success: #15803d;
-      --success-bg: #f0fdf4;
-      --radius: 10px;
-      --radius-sm: 6px;
-      --shadow: 0 1px 3px rgba(0,0,0,0.07), 0 1px 2px rgba(0,0,0,0.05);
+      --green: #96BF48; --green-dark: #6d9031; --green-light: #f2f7ea;
+      --bg: #f5f5f3; --surface: #fff; --border: #e5e5e2; --border-s: #c8c8c4;
+      --text: #1a1a18; --text2: #555550; --text3: #999992;
+      --danger: #d63b3b; --danger-bg: #fef2f2;
+      --warning: #b45309; --warning-bg: #fffbeb;
+      --success: #15803d; --success-bg: #f0fdf4;
+      --radius: 10px; --radius-sm: 6px;
     }
+    body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; font-size: 15px; }
 
-    body {
-      font-family: 'DM Sans', sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      min-height: 100vh;
-      font-size: 15px;
-      line-height: 1.5;
-    }
-
-    /* ── Login screen ── */
-    #login-screen {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 2rem 1rem;
-    }
-
-    .login-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      padding: 2.5rem 2rem;
-      width: 100%;
-      max-width: 380px;
-      box-shadow: var(--shadow);
-    }
-
-    .login-logo {
-      width: 48px;
-      height: 48px;
-      background: var(--green);
-      border-radius: var(--radius);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: 1.25rem;
-    }
-
-    .login-logo svg { width: 26px; height: 26px; fill: white; }
-
+    /* ── Login ── */
+    #login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 2rem 1rem; }
+    .login-card { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 2.5rem 2rem; width: 100%; max-width: 380px; }
+    .app-logo { width: 56px; height: 56px; margin-bottom: 1.25rem; object-fit: contain; }
+    .app-logo-fallback { width: 48px; height: 48px; background: var(--green); border-radius: var(--radius); display: flex; align-items: center; justify-content: center; margin-bottom: 1.25rem; }
+    .app-logo-fallback svg { width: 26px; height: 26px; fill: white; }
     .login-card h1 { font-size: 20px; font-weight: 600; margin-bottom: 4px; }
-    .login-card p { font-size: 14px; color: var(--text-2); margin-bottom: 1.75rem; }
-
+    .login-card p { font-size: 14px; color: var(--text2); margin-bottom: 1.75rem; }
     .field { margin-bottom: 1rem; }
-    .field label { display: block; font-size: 13px; font-weight: 500; color: var(--text-2); margin-bottom: 6px; }
-
-    input[type="text"], input[type="password"], input[type="number"] {
-      width: 100%;
-      padding: 10px 12px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      font-family: inherit;
-      font-size: 15px;
-      color: var(--text);
-      background: var(--surface);
-      outline: none;
-      transition: border-color 0.15s;
-    }
-
+    .field label { display: block; font-size: 13px; font-weight: 500; color: var(--text2); margin-bottom: 6px; }
+    input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); font-family: inherit; font-size: 15px; color: var(--text); background: var(--surface); outline: none; transition: border-color 0.15s; }
     input:focus { border-color: var(--green); }
-    input::placeholder { color: var(--text-3); }
-
-    button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 6px;
-      font-family: inherit;
-      font-size: 14px;
-      font-weight: 500;
-      border: none;
-      border-radius: var(--radius-sm);
-      cursor: pointer;
-      transition: background 0.15s, opacity 0.15s;
-    }
-
-    .btn-primary {
-      background: var(--green);
-      color: white;
-      padding: 10px 18px;
-      width: 100%;
-    }
-
+    input::placeholder { color: var(--text3); }
+    button { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font-family: inherit; font-size: 14px; font-weight: 500; border: none; border-radius: var(--radius-sm); cursor: pointer; transition: background 0.15s, opacity 0.15s; }
+    .btn-primary { background: var(--green); color: white; padding: 10px 18px; width: 100%; }
     .btn-primary:hover { background: var(--green-dark); }
     .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-sm { background: var(--bg); color: var(--text2); padding: 6px 12px; border: 1px solid var(--border); font-size: 13px; }
+    .btn-sm:hover { background: var(--border); }
+    .err-box { font-size: 13px; color: var(--danger); background: var(--danger-bg); border: 1px solid #fecaca; border-radius: var(--radius-sm); padding: 8px 12px; margin-top: 10px; display: none; }
 
-    .btn-secondary {
-      background: var(--bg);
-      color: var(--text-2);
-      padding: 8px 14px;
-      border: 1px solid var(--border);
-    }
-
-    .btn-secondary:hover { background: var(--border); }
-
-    .btn-ghost {
-      background: transparent;
-      color: var(--text-2);
-      padding: 6px 10px;
-    }
-
-    .btn-ghost:hover { background: var(--bg); }
-
-    .error-msg {
-      font-size: 13px;
-      color: var(--danger);
-      background: var(--danger-bg);
-      border: 1px solid #fecaca;
-      border-radius: var(--radius-sm);
-      padding: 8px 12px;
-      margin-top: 10px;
-      display: none;
-    }
-
-    /* ── Main app ── */
+    /* ── App shell ── */
     #app { display: none; min-height: 100vh; }
-
-    .topbar {
-      background: var(--surface);
-      border-bottom: 1px solid var(--border);
-      padding: 0 1.25rem;
-      height: 56px;
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      position: sticky;
-      top: 0;
-      z-index: 10;
-    }
-
-    .topbar-logo {
-      width: 30px;
-      height: 30px;
-      background: var(--green);
-      border-radius: 7px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      flex-shrink: 0;
-    }
-
-    .topbar-logo svg { width: 17px; height: 17px; fill: white; }
-
+    .topbar { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 1.25rem; height: 56px; display: flex; align-items: center; gap: 10px; position: sticky; top: 0; z-index: 10; }
+    .topbar-logo { height: 32px; width: auto; object-fit: contain; }
+    .topbar-logo-fallback { width: 30px; height: 30px; background: var(--green); border-radius: 7px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .topbar-logo-fallback svg { width: 17px; height: 17px; fill: white; }
     .topbar-title { font-size: 15px; font-weight: 600; flex: 1; }
-    .topbar-store { font-size: 12px; color: var(--text-3); font-family: 'DM Mono', monospace; }
+    .topbar-user { font-size: 12px; color: var(--text3); display: flex; align-items: center; gap: 8px; }
+    .user-chip { background: var(--green-light); color: var(--green-dark); font-size: 12px; font-weight: 500; padding: 3px 10px; border-radius: 99px; }
+    .logout-btn { font-size: 12px; color: var(--text3); background: none; border: none; cursor: pointer; padding: 4px 6px; border-radius: 4px; }
+    .logout-btn:hover { background: var(--bg); color: var(--text); }
+    .main { padding: 1.25rem; max-width: 720px; margin: 0 auto; }
 
-    .main { padding: 1.25rem; max-width: 680px; margin: 0 auto; }
-
-    /* Search */
-    .search-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1rem 1.25rem;
-      margin-bottom: 1rem;
-    }
-
+    /* ── Search ── */
+    .search-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1rem 1.25rem; margin-bottom: 1rem; }
     .search-row { display: flex; gap: 8px; }
     .search-row input { flex: 1; }
+    .search-row button { white-space: nowrap; width: auto; padding: 10px 18px; }
 
-    /* Order meta */
-    .order-card {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      margin-bottom: 1rem;
-      overflow: hidden;
-    }
-
-    .order-card-header {
-      padding: 1rem 1.25rem;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      gap: 1rem;
-    }
-
+    /* ── Order card ── */
+    .order-card { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 1rem; overflow: hidden; }
+    .order-header { padding: 1rem 1.25rem; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
     .order-name { font-size: 18px; font-weight: 600; }
-    .order-customer { font-size: 13px; color: var(--text-2); margin-top: 2px; }
-
-    .status-chip {
-      font-size: 11px;
-      font-weight: 600;
-      padding: 4px 10px;
-      border-radius: 99px;
-      white-space: nowrap;
-      letter-spacing: 0.03em;
-      text-transform: uppercase;
-    }
-
-    .chip-unfulfilled { background: var(--warning-bg); color: var(--warning); }
-    .chip-partial { background: #fff7ed; color: #c2410c; }
-    .chip-fulfilled { background: var(--success-bg); color: var(--success); }
-
-    .order-meta {
-      padding: 1rem 1.25rem;
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-
+    .order-sub { font-size: 13px; color: var(--text2); margin-top: 2px; }
+    .order-meta { padding: 1rem 1.25rem; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
     .meta-item { display: flex; flex-direction: column; gap: 2px; }
-    .meta-label { font-size: 11px; color: var(--text-3); font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
+    .meta-label { font-size: 11px; color: var(--text3); font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
     .meta-val { font-size: 14px; font-weight: 500; }
+    .chip { font-size: 11px; font-weight: 600; padding: 4px 10px; border-radius: 99px; white-space: nowrap; letter-spacing: 0.03em; text-transform: uppercase; }
+    .chip-unf { background: var(--warning-bg); color: var(--warning); }
+    .chip-par { background: #fff7ed; color: #c2410c; }
+    .chip-ful { background: var(--success-bg); color: var(--success); }
 
-    /* Fulfillment order section */
-    .section-header {
-      font-size: 12px;
-      font-weight: 600;
-      color: var(--text-3);
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      padding: 0 4px;
-      margin: 1.25rem 0 8px;
-    }
+    /* ── Section headers ── */
+    .section-hd { font-size: 12px; font-weight: 600; color: var(--text3); text-transform: uppercase; letter-spacing: 0.06em; padding: 0 2px; margin: 1.25rem 0 8px; }
+    .fo-label { font-size: 12px; color: var(--text3); padding: 0 2px; margin-bottom: 6px; display: flex; align-items: center; gap: 6px; }
+    .fo-location { font-weight: 500; color: var(--text2); }
 
-    /* Line items */
-    .line-item {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 14px;
-      margin-bottom: 8px;
-      display: flex;
-      align-items: center;
-      gap: 12px;
-      cursor: pointer;
-      transition: border-color 0.15s, background 0.1s;
-    }
-
-    .line-item:hover { border-color: var(--border-strong); }
+    /* ── Line items ── */
+    .line-item { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 12px; transition: border-color 0.15s; }
+    .line-item.selectable { cursor: pointer; }
+    .line-item.selectable:hover { border-color: var(--border-s); }
     .line-item.selected { border-color: var(--green); background: var(--green-light); }
-    .line-item.disabled { opacity: 0.5; cursor: not-allowed; }
-
-    .li-checkbox {
-      width: 20px;
-      height: 20px;
-      border: 1.5px solid var(--border-strong);
-      border-radius: 5px;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.15s;
-      background: var(--surface);
-    }
-
-    .line-item.selected .li-checkbox {
-      background: var(--green);
-      border-color: var(--green);
-    }
-
-    .li-checkbox svg { width: 12px; height: 12px; fill: none; stroke: white; stroke-width: 2.5; opacity: 0; transition: opacity 0.1s; }
-    .line-item.selected .li-checkbox svg { opacity: 1; }
-
-    .li-img {
-      width: 48px;
-      height: 48px;
-      border-radius: 7px;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      object-fit: cover;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 11px;
-      color: var(--text-3);
-      font-family: 'DM Mono', monospace;
-      overflow: hidden;
-    }
-
+    .line-item.locked { opacity: 0.55; background: var(--bg); }
+    .li-check { width: 20px; height: 20px; border: 1.5px solid var(--border-s); border-radius: 5px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.15s; background: var(--surface); margin-top: 2px; }
+    .selected .li-check { background: var(--green); border-color: var(--green); }
+    .li-check svg { width: 12px; height: 12px; fill: none; stroke: white; stroke-width: 2.5; opacity: 0; transition: opacity 0.1s; }
+    .selected .li-check svg { opacity: 1; }
+    .li-img { width: 48px; height: 48px; border-radius: 7px; background: var(--bg); border: 1px solid var(--border); object-fit: cover; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--text3); font-family: 'DM Mono', monospace; overflow: hidden; }
     .li-img img { width: 100%; height: 100%; object-fit: cover; }
-
     .li-body { flex: 1; min-width: 0; }
-    .li-name { font-size: 14px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .li-sub { font-size: 12px; color: var(--text-2); margin-top: 2px; }
+    .li-name { font-size: 14px; font-weight: 500; }
+    .li-sub { font-size: 12px; color: var(--text2); margin-top: 2px; }
+    .li-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; flex-shrink: 0; }
+    .stock-badge { font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 99px; }
+    .s-ok { background: var(--success-bg); color: var(--success); }
+    .s-low { background: var(--warning-bg); color: var(--warning); }
+    .s-out { background: var(--danger-bg); color: var(--danger); }
+    .s-unk { background: var(--bg); color: var(--text3); }
+    .lock-badge { font-size: 11px; color: var(--text3); background: var(--bg); border: 1px solid var(--border); padding: 3px 8px; border-radius: 99px; }
 
-    .li-right { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+    /* Qty input inside line item */
+    .qty-row { display: flex; align-items: center; gap: 6px; margin-top: 8px; }
+    .qty-row label { font-size: 12px; color: var(--text2); }
+    .qty-input { width: 64px; padding: 4px 8px; font-size: 13px; font-family: 'DM Mono', monospace; border: 1px solid var(--border); border-radius: 4px; background: var(--surface); text-align: center; }
+    .qty-input:focus { border-color: var(--green); outline: none; }
+    .qty-max { font-size: 11px; color: var(--text3); }
 
-    .stock-badge {
-      font-size: 11px;
-      font-weight: 600;
-      padding: 3px 8px;
-      border-radius: 99px;
-      letter-spacing: 0.02em;
-    }
+    /* Stock table */
+    .stock-table { margin-top: 10px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; font-size: 12px; }
+    .stock-row { display: flex; justify-content: space-between; padding: 5px 10px; border-bottom: 1px solid var(--border); }
+    .stock-row:last-child { border-bottom: none; }
+    .stock-row:nth-child(even) { background: var(--bg); }
+    .stock-loc { color: var(--text2); }
+    .stock-qty { font-family: 'DM Mono', monospace; font-weight: 500; }
+    .stock-qty.zero { color: var(--danger); }
+    .stock-qty.low { color: var(--warning); }
+    .stock-qty.ok { color: var(--success); }
+    .stock-toggle { font-size: 11px; color: var(--green-dark); cursor: pointer; text-decoration: underline; margin-top: 6px; display: inline-block; }
 
-    .stock-ok { background: var(--success-bg); color: var(--success); }
-    .stock-low { background: var(--warning-bg); color: var(--warning); }
-    .stock-out { background: var(--danger-bg); color: var(--danger); }
-
-    .li-qty { font-size: 12px; color: var(--text-3); }
-
-    /* Reroute panel */
-    .reroute-panel {
-      background: var(--surface);
-      border: 1px solid var(--border);
-      border-radius: var(--radius);
-      padding: 1.25rem;
-      margin-top: 1rem;
-    }
-
+    /* ── Reroute panel ── */
+    .reroute-panel { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 1.25rem; margin-top: 1rem; }
     .reroute-panel h2 { font-size: 15px; font-weight: 600; margin-bottom: 4px; }
-    .reroute-panel .sub { font-size: 13px; color: var(--text-2); margin-bottom: 1rem; }
-
+    .rp-sub { font-size: 13px; color: var(--text2); margin-bottom: 1rem; }
     .selected-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; min-height: 28px; }
-
-    .tag {
-      background: var(--green-light);
-      color: var(--green-dark);
-      border: 1px solid #c8e6a0;
-      border-radius: 99px;
-      font-size: 12px;
-      font-weight: 500;
-      padding: 3px 10px;
-    }
-
-    .location-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 1rem; }
-
-    .loc-option {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      border: 1px solid var(--border);
-      border-radius: var(--radius-sm);
-      padding: 10px 12px;
-      cursor: pointer;
-      transition: border-color 0.15s;
-    }
-
-    .loc-option:hover { border-color: var(--border-strong); }
-    .loc-option.selected { border-color: var(--green); background: var(--green-light); }
-
-    .loc-radio {
-      width: 18px;
-      height: 18px;
-      border: 1.5px solid var(--border-strong);
-      border-radius: 50%;
-      flex-shrink: 0;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.15s;
-    }
-
-    .loc-option.selected .loc-radio { border-color: var(--green); }
-
-    .loc-dot {
-      width: 8px;
-      height: 8px;
-      border-radius: 50%;
-      background: var(--green);
-      opacity: 0;
-      transition: opacity 0.1s;
-    }
-
-    .loc-option.selected .loc-dot { opacity: 1; }
-
+    .tag { background: var(--green-light); color: var(--green-dark); border: 1px solid #c8e6a0; border-radius: 99px; font-size: 12px; font-weight: 500; padding: 3px 10px; }
+    .loc-list { display: flex; flex-direction: column; gap: 6px; margin-bottom: 1rem; }
+    .loc-opt { display: flex; align-items: center; gap: 10px; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 10px 12px; cursor: pointer; transition: border-color 0.15s; }
+    .loc-opt:hover { border-color: var(--border-s); }
+    .loc-opt.selected { border-color: var(--green); background: var(--green-light); }
+    .loc-opt.no-stock { opacity: 0.45; cursor: not-allowed; }
+    .loc-radio { width: 18px; height: 18px; border: 1.5px solid var(--border-s); border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; transition: all 0.15s; }
+    .loc-opt.selected .loc-radio { border-color: var(--green); }
+    .loc-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); opacity: 0; transition: opacity 0.1s; }
+    .loc-opt.selected .loc-dot { opacity: 1; }
     .loc-name { font-size: 14px; font-weight: 500; flex: 1; }
+    .loc-stock-pill { font-size: 11px; font-family: 'DM Mono', monospace; padding: 2px 7px; border-radius: 99px; }
 
-    .confirm-strip {
-      background: var(--success-bg);
-      border: 1px solid #bbf7d0;
-      border-radius: var(--radius-sm);
-      padding: 12px 14px;
-      display: flex;
-      align-items: flex-start;
-      gap: 10px;
-      margin-top: 12px;
-      display: none;
-    }
-
+    .confirm-strip { background: var(--success-bg); border: 1px solid #bbf7d0; border-radius: var(--radius-sm); padding: 12px 14px; display: flex; align-items: flex-start; gap: 10px; margin-top: 12px; display: none; }
     .confirm-strip svg { width: 18px; height: 18px; flex-shrink: 0; margin-top: 1px; }
-    .confirm-strip .confirm-text { font-size: 13px; color: var(--success); }
-    .confirm-strip strong { font-weight: 600; }
+    .confirm-text { font-size: 13px; color: var(--success); }
 
-    /* Loading state */
-    .spinner {
-      width: 16px;
-      height: 16px;
-      border: 2px solid rgba(255,255,255,0.4);
-      border-top-color: white;
-      border-radius: 50%;
-      animation: spin 0.6s linear infinite;
-      display: none;
-    }
+    /* ── Access denied ── */
+    .denied-card { background: var(--danger-bg); border: 1px solid #fecaca; border-radius: var(--radius); padding: 2rem; text-align: center; }
+    .denied-card h2 { font-size: 16px; font-weight: 600; color: var(--danger); margin-bottom: 8px; }
+    .denied-card p { font-size: 14px; color: var(--text2); }
 
-    @keyframes spin { to { transform: rotate(360deg); } }
-
-    .empty {
-      text-align: center;
-      padding: 3rem 1rem;
-      color: var(--text-3);
-    }
-
+    /* ── Empty state ── */
+    .empty { text-align: center; padding: 3rem 1rem; color: var(--text3); }
     .empty svg { width: 40px; height: 40px; margin-bottom: 12px; opacity: 0.4; }
     .empty p { font-size: 14px; }
 
-    .foGroup { margin-bottom: 1.25rem; }
-
-    .fo-label {
-      font-size: 12px;
-      color: var(--text-3);
-      padding: 0 2px;
-      margin-bottom: 6px;
-      display: flex;
-      align-items: center;
-      gap: 6px;
-    }
-
-    .fo-location-name { font-weight: 500; color: var(--text-2); }
-
-    .already-fulfilled-note {
-      font-size: 12px;
-      color: var(--text-3);
-      padding: 8px 12px;
-      background: var(--bg);
-      border-radius: var(--radius-sm);
-      margin-top: 4px;
-    }
+    .spinner { width: 16px; height: 16px; border: 2px solid rgba(255,255,255,0.4); border-top-color: white; border-radius: 50%; animation: spin 0.6s linear infinite; display: none; }
+    @keyframes spin { to { transform: rotate(360deg); } }
 
     @media (max-width: 480px) {
       .order-meta { grid-template-columns: 1fr; }
@@ -463,44 +162,45 @@
 </head>
 <body>
 
-<!-- ═══════════════════════════════════════ LOGIN ══ -->
+<!-- ═══ LOGIN ══════════════════════════════════════════════ -->
 <div id="login-screen">
   <div class="login-card">
-    <div class="login-logo">
+    <img src="/logo.png" class="app-logo" id="login-logo" onerror="this.style.display='none'; document.getElementById('login-logo-fb').style.display='flex';" />
+    <div class="app-logo-fallback" id="login-logo-fb" style="display:none">
       <svg viewBox="0 0 24 24"><path d="M15.8 2.3c-.1-.1-.3-.1-.4 0l-1 .6c-.2-.6-.7-1.2-1.4-1.5-.6-.3-1.3-.4-2-.2-.3-.7-.8-1.2-1.5-1.2-.4 0-.8.2-1.1.5C8 .8 7.8 1.1 7.7 1.4c-.5-.1-1 0-1.4.3-.4.3-.7.7-.8 1.2l-4 12c-.1.2 0 .4.2.5l5.3 1.6 1.6 4.7c.1.2.3.3.5.2l9.6-2.9c.2-.1.3-.3.2-.5L15.8 2.3z"/></svg>
     </div>
     <h1>Fulfillment rerouter</h1>
-    <p>Store staff tool — enter your access password to continue.</p>
-    <div class="field">
-      <label for="pw-input">Access password</label>
-      <input type="password" id="pw-input" placeholder="Enter password" autocomplete="current-password" />
-    </div>
-    <button class="btn-primary" onclick="doLogin()" id="login-btn">Sign in</button>
-    <div class="error-msg" id="login-error">Wrong password. Ask your IT team for access.</div>
+    <p>Store staff tool — sign in to continue.</p>
+    <div class="field"><label>Username</label><input type="text" id="un-input" placeholder="Your username" autocomplete="username" /></div>
+    <div class="field"><label>Password</label><input type="password" id="pw-input" placeholder="Your password" autocomplete="current-password" /></div>
+    <button class="btn-primary" onclick="doLogin()" id="login-btn">Sign in<div class="spinner" id="login-spinner"></div></button>
+    <div class="err-box" id="login-err"></div>
   </div>
 </div>
 
-<!-- ═══════════════════════════════════════ APP ══ -->
+<!-- ═══ APP ═════════════════════════════════════════════════ -->
 <div id="app">
   <div class="topbar">
-    <div class="topbar-logo">
+    <img src="/logo.png" class="topbar-logo" id="topbar-logo" onerror="this.style.display='none'; document.getElementById('topbar-logo-fb').style.display='flex';" />
+    <div class="topbar-logo-fallback" id="topbar-logo-fb" style="display:none">
       <svg viewBox="0 0 24 24"><path d="M15.8 2.3c-.1-.1-.3-.1-.4 0l-1 .6c-.2-.6-.7-1.2-1.4-1.5-.6-.3-1.3-.4-2-.2-.3-.7-.8-1.2-1.5-1.2-.4 0-.8.2-1.1.5C8 .8 7.8 1.1 7.7 1.4c-.5-.1-1 0-1.4.3-.4.3-.7.7-.8 1.2l-4 12c-.1.2 0 .4.2.5l5.3 1.6 1.6 4.7c.1.2.3.3.5.2l9.6-2.9c.2-.1.3-.3.2-.5L15.8 2.3z"/></svg>
     </div>
     <span class="topbar-title">Fulfillment rerouter</span>
-    <span class="topbar-store" id="store-name"></span>
+    <div class="topbar-user">
+      <span class="user-chip" id="user-chip"></span>
+      <button class="logout-btn" onclick="doLogout()">Sign out</button>
+    </div>
   </div>
 
   <div class="main">
     <div class="search-card">
       <div class="search-row">
         <input type="text" id="order-input" placeholder="Order number (e.g. 4521)" />
-        <button class="btn-primary" style="width:auto; padding: 10px 18px;" onclick="lookupOrder()" id="lookup-btn">
-          <span id="lookup-label">Look up</span>
-          <div class="spinner" id="lookup-spinner"></div>
+        <button class="btn-primary" onclick="lookupOrder()" id="lookup-btn">
+          Look up<div class="spinner" id="lookup-spinner"></div>
         </button>
       </div>
     </div>
-
     <div id="order-area">
       <div class="empty">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="7" width="20" height="14" rx="2"/><path d="M16 7V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v2"/></svg>
@@ -511,356 +211,417 @@
 </div>
 
 <script>
-let AUTH_PASSWORD = '';
-let selectedLineItems = {};   // { foId: Set of lineItemIds }
+let SESSION = null; // { username, locationId }
+let LOCATIONS = []; // allowed destination locations
+let currentOrder = null;
+let inventoryByItem = {};
+let allLocations = [];
+let selectedItems = {}; // { foId: { liId: qty } }
 let selectedLocation = null;
-let locationsCache = [];
-let currentOrderData = null;
 
-// ── Auth ────────────────────────────────────────────────
+// ── Auth ─────────────────────────────────────────────────────────────────────
 async function doLogin() {
-  const pw = document.getElementById('pw-input').value.trim();
+  const username = document.getElementById('un-input').value.trim();
+  const password = document.getElementById('pw-input').value.trim();
   const btn = document.getElementById('login-btn');
-  const err = document.getElementById('login-error');
-  if (!pw) return;
+  const spinner = document.getElementById('login-spinner');
+  const err = document.getElementById('login-err');
+  if (!username || !password) return;
 
-  btn.disabled = true;
-  btn.textContent = 'Signing in…';
-  err.style.display = 'none';
+  btn.disabled = true; spinner.style.display = 'block'; err.style.display = 'none';
 
   try {
-    const res = await fetch('/api/auth', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ password: pw }),
-    });
-
-    if (res.ok) {
-      AUTH_PASSWORD = pw;
-      document.getElementById('login-screen').style.display = 'none';
-      document.getElementById('app').style.display = 'block';
-      loadStoreName();
-      loadLocations();
-    } else {
-      err.style.display = 'block';
-      btn.disabled = false;
-      btn.textContent = 'Sign in';
-    }
-  } catch {
-    err.textContent = 'Could not reach server. Is it running?';
-    err.style.display = 'block';
-    btn.disabled = false;
-    btn.textContent = 'Sign in';
-  }
-}
-
-document.getElementById('pw-input').addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); });
-
-function authHeaders() {
-  return { 'x-access-password': AUTH_PASSWORD, 'Content-Type': 'application/json' };
-}
-
-async function loadStoreName() {
-  try {
-    const res = await fetch('/api/health');
+    const res = await fetch('/api/auth', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username, password }) });
     const json = await res.json();
-    document.getElementById('store-name').textContent = json.store || '';
-  } catch {}
+    if (!res.ok) { err.textContent = json.error || 'Login failed'; err.style.display = 'block'; return; }
+    SESSION = { username: json.username, locationId: json.locationId };
+    document.getElementById('login-screen').style.display = 'none';
+    document.getElementById('app').style.display = 'block';
+    document.getElementById('user-chip').textContent = username;
+    await loadLocations();
+  } catch(e) { err.textContent = 'Cannot reach server'; err.style.display = 'block'; }
+  finally { btn.disabled = false; spinner.style.display = 'none'; }
 }
+
+function doLogout() {
+  SESSION = null; LOCATIONS = []; currentOrder = null;
+  selectedItems = {}; selectedLocation = null;
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('app').style.display = 'none';
+  document.getElementById('order-area').innerHTML = '';
+  document.getElementById('un-input').value = '';
+  document.getElementById('pw-input').value = '';
+}
+
+['un-input','pw-input'].forEach(id => document.getElementById(id).addEventListener('keydown', e => { if (e.key === 'Enter') doLogin(); }));
+
+function authHeaders() { return { 'x-username': SESSION.username, 'x-password': document.getElementById('pw-input').value || SESSION._pw || '', 'Content-Type': 'application/json' }; }
+
+// Store password for header use after login
+document.getElementById('pw-input').addEventListener('change', () => { if (SESSION) SESSION._pw = document.getElementById('pw-input').value; });
+const _origLogin = doLogin;
 
 async function loadLocations() {
+  // Store password for subsequent requests
+  SESSION._pw = document.getElementById('pw-input').value;
   try {
-    const res = await fetch('/api/locations', { headers: authHeaders() });
+    const res = await fetch('/api/locations', { headers: { 'x-username': SESSION.username, 'x-password': SESSION._pw } });
     const json = await res.json();
-    locationsCache = json.locations || [];
-  } catch {}
+    LOCATIONS = json.locations || [];
+  } catch(e) { console.error('Could not load locations', e); }
 }
 
-// ── Order lookup ─────────────────────────────────────────
+// ── Order lookup ──────────────────────────────────────────────────────────────
 async function lookupOrder() {
-  const raw = document.getElementById('order-input').value.trim().replace('#', '');
+  const raw = document.getElementById('order-input').value.trim().replace('#','');
   if (!raw) return;
-
   const btn = document.getElementById('lookup-btn');
-  const label = document.getElementById('lookup-label');
   const spinner = document.getElementById('lookup-spinner');
-
-  btn.disabled = true;
-  label.textContent = '';
-  spinner.style.display = 'block';
-  selectedLineItems = {};
-  selectedLocation = null;
+  btn.disabled = true; spinner.style.display = 'block';
+  selectedItems = {}; selectedLocation = null;
 
   try {
-    const res = await fetch(`/api/order/${encodeURIComponent(raw)}`, { headers: authHeaders() });
-    if (!res.ok) {
-      const json = await res.json();
-      showOrderError(json.error || 'Order not found');
+    const res = await fetch(`/api/order/${encodeURIComponent(raw)}`, { headers: { 'x-username': SESSION.username, 'x-password': SESSION._pw } });
+    const json = await res.json();
+
+    if (res.status === 403 && json.error === 'ACCESS_DENIED') {
+      document.getElementById('order-area').innerHTML = `
+        <div class="denied-card">
+          <h2>⛔ Access restricted</h2>
+          <p>${json.message}</p>
+        </div>`;
       return;
     }
 
-    const { order, inventoryByItem } = await res.json();
-    currentOrderData = { order, inventoryByItem };
-    renderOrder(order, inventoryByItem);
-  } catch (err) {
-    showOrderError('Network error: ' + err.message);
-  } finally {
-    btn.disabled = false;
-    label.textContent = 'Look up';
-    spinner.style.display = 'none';
-  }
+    if (!res.ok) { showError(json.error || 'Order not found'); return; }
+    currentOrder = json.order;
+    inventoryByItem = json.inventoryByItem || {};
+    allLocations = json.allLocations || [];
+    renderOrder();
+  } catch(e) { showError('Network error: ' + e.message); }
+  finally { btn.disabled = false; spinner.style.display = 'none'; }
 }
 
 document.getElementById('order-input').addEventListener('keydown', e => { if (e.key === 'Enter') lookupOrder(); });
 
-function showOrderError(msg) {
-  document.getElementById('order-area').innerHTML = `
-    <div class="empty">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      <p>${msg}</p>
-    </div>`;
+function showError(msg) {
+  document.getElementById('order-area').innerHTML = `<div class="empty"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg><p>${msg}</p></div>`;
 }
 
-// ── Render order ──────────────────────────────────────────
-function renderOrder(order, inventoryByItem) {
-  const fulfillmentOrders = order.fulfillmentOrders?.edges?.map(e => e.node) || [];
-  const rerouteable = fulfillmentOrders.filter(fo => ['OPEN', 'IN_PROGRESS', 'ON_HOLD'].includes(fo.status));
-  const date = new Date(order.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
-
-  const statusMap = {
-    UNFULFILLED: ['chip-unfulfilled', 'Unfulfilled'],
-    PARTIAL: ['chip-partial', 'Partially fulfilled'],
-    FULFILLED: ['chip-fulfilled', 'Fulfilled'],
-  };
-  const [chipClass, chipLabel] = statusMap[order.displayFulfillmentStatus] || ['chip-unfulfilled', order.displayFulfillmentStatus];
+// ── Render order ──────────────────────────────────────────────────────────────
+function renderOrder() {
+  const o = currentOrder;
+  const fos = o.fulfillmentOrders?.edges?.map(e => e.node) || [];
+  const date = new Date(o.createdAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const statusMap = { UNFULFILLED: ['chip-unf','Unfulfilled'], PARTIAL: ['chip-par','Partial'], FULFILLED: ['chip-ful','Fulfilled'] };
+  const [chipCls, chipLbl] = statusMap[o.displayFulfillmentStatus] || ['chip-unf', o.displayFulfillmentStatus];
 
   let html = `
     <div class="order-card">
-      <div class="order-card-header">
+      <div class="order-header">
         <div>
-          <div class="order-name">${order.name}</div>
-          <div class="order-customer">${order.customer?.displayName || 'Guest'} ${order.customer?.email ? '· ' + order.customer.email : ''}</div>
+          <div class="order-name">${o.name}</div>
+          <div class="order-sub">${o.customer?.displayName || 'Guest'}${o.customer?.email ? ' · ' + o.customer.email : ''}</div>
         </div>
-        <span class="status-chip ${chipClass}">${chipLabel}</span>
+        <span class="chip ${chipCls}">${chipLbl}</span>
       </div>
       <div class="order-meta">
         <div class="meta-item"><span class="meta-label">Date</span><span class="meta-val">${date}</span></div>
-        <div class="meta-item"><span class="meta-label">Fulfillment groups</span><span class="meta-val">${fulfillmentOrders.length}</span></div>
+        <div class="meta-item"><span class="meta-label">Fulfillment groups</span><span class="meta-val">${fos.length}</span></div>
       </div>
     </div>`;
 
-  if (rerouteable.length === 0) {
-    html += `<div class="already-fulfilled-note">All fulfillment groups for this order are already fulfilled or closed — nothing to reroute.</div>`;
+  const actionableFOs = fos.filter(fo => fo.access === 'actionable' && ['OPEN','IN_PROGRESS','ON_HOLD'].includes(fo.status));
+  const lockedFOs = fos.filter(fo => fo.access === 'locked');
+
+  if (actionableFOs.length === 0 && lockedFOs.length === 0) {
+    html += `<div class="empty"><p>No actionable fulfillment groups found for this order.</p></div>`;
     document.getElementById('order-area').innerHTML = html;
     return;
   }
 
-  rerouteable.forEach((fo, idx) => {
-    selectedLineItems[fo.id] = new Set();
-    const locationName = fo.assignedLocation?.name || 'Unknown location';
-    const lineItems = fo.lineItems?.edges?.map(e => e.node) || [];
-
-    html += `
-      <div class="section-header">Fulfillment group ${idx + 1} of ${rerouteable.length}</div>
-      <div class="fo-label">
-        Currently assigned to: <span class="fo-location-name">${locationName}</span>
-      </div>
-      <div class="foGroup" data-fo-id="${fo.id}">`;
-
-    lineItems.forEach(li => {
-      const variant = li.variant;
-      const product = variant?.product;
-      const invItemId = variant?.inventoryItem?.id;
-      const stockByLoc = inventoryByItem[invItemId] || {};
-      const currentLocId = fo.assignedLocation?.location?.id;
-      const currentStock = currentLocId ? (stockByLoc[currentLocId] ?? 0) : null;
-
-      let stockClass = 'stock-ok', stockLabel = 'In stock';
-      if (currentStock === null) { stockClass = 'stock-low'; stockLabel = 'Unknown'; }
-      else if (currentStock === 0) { stockClass = 'stock-out'; stockLabel = 'Out of stock'; }
-      else if (currentStock <= 2) { stockClass = 'stock-low'; stockLabel = `Low (${currentStock})`; }
-      else { stockLabel = `In stock (${currentStock})`; }
-
-      const imgUrl = product?.featuredImage?.url;
-      const imgHtml = imgUrl
-        ? `<img src="${imgUrl}" alt="" />`
-        : `<span>${(variant?.sku || 'SKU').substring(0, 5)}</span>`;
-
-      html += `
-        <div class="line-item" id="li-${li.id.replace(/\//g, '_')}" data-fo-id="${fo.id}" data-li-id="${li.id}" onclick="toggleLineItem('${fo.id}', '${li.id}', this)">
-          <div class="li-checkbox">
-            <svg viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3"/></svg>
-          </div>
-          <div class="li-img">${imgHtml}</div>
-          <div class="li-body">
-            <div class="li-name">${product?.title || 'Product'}</div>
-            <div class="li-sub">${variant?.title !== 'Default Title' ? variant?.title + ' · ' : ''}SKU: ${variant?.sku || '—'}</div>
-          </div>
-          <div class="li-right">
-            <span class="stock-badge ${stockClass}">${stockLabel}</span>
-            <span class="li-qty">Qty: ${li.remainingQuantity}</span>
-          </div>
-        </div>`;
+  // Actionable (user's store)
+  if (actionableFOs.length > 0) {
+    html += `<p class="section-hd">Your store's items</p>`;
+    actionableFOs.forEach(fo => {
+      selectedItems[fo.id] = selectedItems[fo.id] || {};
+      const locName = fo.assignedLocation?.name || 'Unknown';
+      const lineItems = fo.lineItems?.edges?.map(e => e.node) || [];
+      html += `<div class="fo-label">Assigned to: <span class="fo-location">${locName}</span></div>`;
+      lineItems.forEach(li => {
+        html += renderLineItem(li, fo.id, fo.assignedLocation?.location?.id, true);
+      });
     });
+  }
 
-    html += `</div>`;
-  });
+  // Locked (other stores)
+  if (lockedFOs.length > 0) {
+    html += `<p class="section-hd" style="margin-top:1.5rem">Other store's items — view only</p>`;
+    lockedFOs.forEach(fo => {
+      const locName = fo.assignedLocation?.name || 'Unknown';
+      const lineItems = fo.lineItems?.edges?.map(e => e.node) || [];
+      html += `<div class="fo-label">Assigned to: <span class="fo-location">${locName}</span></div>`;
+      lineItems.forEach(li => { html += renderLineItem(li, fo.id, fo.assignedLocation?.location?.id, false); });
+    });
+  }
 
   // Reroute panel
-  html += `
+  if (actionableFOs.length > 0) {
+    html += renderReroutePanel();
+  }
+
+  document.getElementById('order-area').innerHTML = html;
+}
+
+function renderLineItem(li, foId, currentLocId, actionable) {
+  const variant = li.variant;
+  const product = variant?.product;
+  const invItemId = variant?.inventoryItem?.id;
+  const stockByLoc = inventoryByItem[invItemId] || {};
+  const currentStock = currentLocId ? (stockByLoc[currentLocId] ?? null) : null;
+
+  let badgeCls = 's-unk', badgeLbl = 'Stock unknown';
+  if (currentStock === null) { badgeCls = 's-unk'; badgeLbl = 'Unknown'; }
+  else if (currentStock === 0) { badgeCls = 's-out'; badgeLbl = 'Out of stock'; }
+  else if (currentStock <= 2) { badgeCls = 's-low'; badgeLbl = `Low (${currentStock})`; }
+  else { badgeCls = 's-ok'; badgeLbl = `In stock (${currentStock})`; }
+
+  const imgUrl = product?.featuredImage?.url;
+  const imgHtml = imgUrl ? `<img src="${imgUrl}" alt="" />` : `<span>${(variant?.sku||'').substring(0,5)||'IMG'}</span>`;
+  const safeId = (li.id||'').replace(/[^a-zA-Z0-9]/g,'_');
+
+  // Build stock table for allowed locations
+  let stockTableHtml = '';
+  if (actionable && allLocations.length > 0) {
+    const rows = allLocations.map(loc => {
+      const qty = stockByLoc[loc.id] ?? 0;
+      const qCls = qty === 0 ? 'zero' : qty <= 2 ? 'low' : 'ok';
+      return `<div class="stock-row"><span class="stock-loc">${loc.name}</span><span class="stock-qty ${qCls}">${qty}</span></div>`;
+    }).join('');
+    stockTableHtml = `
+      <span class="stock-toggle" onclick="toggleStock('${safeId}')">Show stock at all locations ▾</span>
+      <div class="stock-table" id="st-${safeId}" style="display:none">${rows}</div>`;
+  }
+
+  if (!actionable) {
+    return `
+      <div class="line-item locked">
+        <div class="li-img">${imgHtml}</div>
+        <div class="li-body">
+          <div class="li-name">${product?.title || 'Product'}</div>
+          <div class="li-sub">${variant?.title !== 'Default Title' ? variant?.title + ' · ' : ''}SKU: ${variant?.sku || '—'} · Qty ${li.remainingQuantity}</div>
+        </div>
+        <div class="li-right"><span class="lock-badge">🔒 Other store</span></div>
+      </div>`;
+  }
+
+  const maxQty = li.remainingQuantity || 1;
+  return `
+    <div class="line-item selectable" id="li-${safeId}" onclick="toggleItem('${foId}','${li.id}',${maxQty},event)">
+      <div class="li-check"><svg viewBox="0 0 12 12"><polyline points="2,6 5,9 10,3"/></svg></div>
+      <div class="li-img">${imgHtml}</div>
+      <div class="li-body">
+        <div class="li-name">${product?.title || 'Product'}</div>
+        <div class="li-sub">${variant?.title !== 'Default Title' ? variant?.title + ' · ' : ''}SKU: ${variant?.sku || '—'} · Qty ${li.remainingQuantity}</div>
+        <div class="qty-row" id="qty-row-${safeId}" style="display:none" onclick="event.stopPropagation()">
+          <label>Reroute qty:</label>
+          <input type="number" class="qty-input" id="qty-${safeId}" value="${maxQty}" min="1" max="${maxQty}"
+            data-fo-id="${foId}" data-li-id="${li.id}" data-max="${maxQty}"
+            onchange="updateQty('${foId}','${li.id}',this)" />
+          <span class="qty-max">of ${maxQty}</span>
+        </div>
+        ${stockTableHtml}
+      </div>
+      <div class="li-right">
+        <span class="stock-badge ${badgeCls}">${badgeLbl}</span>
+      </div>
+    </div>`;
+}
+
+function renderReroutePanel() {
+  const locOptionsHtml = LOCATIONS.map(loc => {
+    // Calculate minimum stock across selected items at this location
+    const noStock = false; // We'll update dynamically
+    return `
+      <div class="loc-opt" id="loc-${loc.id.replace(/[^a-zA-Z0-9]/g,'_')}" data-loc-id="${loc.id}" onclick="selectLocation('${loc.id}',this)">
+        <div class="loc-radio"><div class="loc-dot"></div></div>
+        <span class="loc-name">${loc.name}</span>
+      </div>`;
+  }).join('');
+
+  return `
     <div class="reroute-panel" id="reroute-panel">
       <h2>Reroute selected items</h2>
-      <p class="sub">Select items above, then choose where to send them.</p>
-      <div class="selected-tags" id="selected-tags"><span style="font-size:13px; color:var(--text-3)">No items selected</span></div>
-      <div class="section-header" style="margin-top: 0.5rem;">Send to location</div>
-      <div class="location-list" id="location-list">${renderLocationList()}</div>
-      <button class="btn-primary" id="reroute-btn" onclick="doReroute()" disabled>
-        <span id="reroute-label">Reassign fulfillment</span>
-        <div class="spinner" id="reroute-spinner"></div>
+      <p class="rp-sub">Select items above, choose quantities, then pick a destination.</p>
+      <div class="selected-tags" id="selected-tags"><span style="font-size:13px;color:var(--text3)">No items selected</span></div>
+      <p class="section-hd" style="margin-top:0.5rem">Send to location</p>
+      <div class="loc-list">${locOptionsHtml || '<p style="font-size:13px;color:var(--text3)">No allowed locations configured.</p>'}</div>
+      <button class="btn-primary" id="reroute-btn" onclick="doReroute()" disabled style="margin-top:0.5rem">
+        Reassign fulfillment<div class="spinner" id="reroute-spinner"></div>
       </button>
       <div class="confirm-strip" id="confirm-strip">
         <svg viewBox="0 0 24 24" fill="none" stroke="#15803d" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="9,12 11,14 15,10"/></svg>
         <div class="confirm-text" id="confirm-text"></div>
       </div>
     </div>`;
-
-  document.getElementById('order-area').innerHTML = html;
 }
 
-function renderLocationList() {
-  if (!locationsCache.length) return '<p style="font-size:13px; color:var(--text-3)">Loading locations…</p>';
-  return locationsCache.map(loc => `
-    <div class="loc-option" id="loc-${loc.id.replace(/\//g, '_')}" data-loc-id="${loc.id}" onclick="selectLocation('${loc.id}', this)">
-      <div class="loc-radio"><div class="loc-dot"></div></div>
-      <span class="loc-name">${loc.name}</span>
-    </div>`).join('');
+// ── Interactions ──────────────────────────────────────────────────────────────
+function toggleStock(safeId) {
+  const el = document.getElementById('st-' + safeId);
+  const toggle = el?.previousElementSibling;
+  if (!el) return;
+  const open = el.style.display === 'none';
+  el.style.display = open ? 'block' : 'none';
+  if (toggle) toggle.textContent = (open ? 'Hide stock ▴' : 'Show stock at all locations ▾');
 }
 
-// ── Interactions ──────────────────────────────────────────
-function toggleLineItem(foId, liId, el) {
-  if (!selectedLineItems[foId]) selectedLineItems[foId] = new Set();
-  const set = selectedLineItems[foId];
-  if (set.has(liId)) { set.delete(liId); el.classList.remove('selected'); }
-  else { set.add(liId); el.classList.add('selected'); }
-  updateReroutePanel();
+function toggleItem(foId, liId, maxQty, event) {
+  if (event.target.classList.contains('qty-input') || event.target.tagName === 'LABEL' || event.target.classList.contains('stock-toggle')) return;
+  const safeId = liId.replace(/[^a-zA-Z0-9]/g,'_');
+  const el = document.getElementById('li-' + safeId);
+  const qtyRow = document.getElementById('qty-row-' + safeId);
+  const qtyInput = document.getElementById('qty-' + safeId);
+
+  if (!selectedItems[foId]) selectedItems[foId] = {};
+
+  if (selectedItems[foId][liId] !== undefined) {
+    delete selectedItems[foId][liId];
+    el?.classList.remove('selected');
+    if (qtyRow) qtyRow.style.display = 'none';
+  } else {
+    selectedItems[foId][liId] = maxQty;
+    el?.classList.add('selected');
+    if (qtyRow) qtyRow.style.display = 'flex';
+    if (qtyInput) qtyInput.value = maxQty;
+  }
+  updatePanel();
+}
+
+function updateQty(foId, liId, input) {
+  const max = parseInt(input.dataset.max);
+  let val = parseInt(input.value);
+  if (isNaN(val) || val < 1) val = 1;
+  if (val > max) val = max;
+  input.value = val;
+  if (selectedItems[foId] && selectedItems[foId][liId] !== undefined) {
+    selectedItems[foId][liId] = val;
+  }
+  updatePanel();
 }
 
 function selectLocation(locId, el) {
   selectedLocation = locId;
-  document.querySelectorAll('.loc-option').forEach(o => o.classList.remove('selected'));
+  document.querySelectorAll('.loc-opt').forEach(o => o.classList.remove('selected'));
   el.classList.add('selected');
-  updateReroutePanel();
+  updatePanel();
 }
 
-function allSelectedItems() {
-  const items = [];
-  const order = currentOrderData?.order;
-  if (!order) return items;
+function updatePanel() {
+  const tags = document.getElementById('selected-tags');
+  const btn = document.getElementById('reroute-btn');
+  if (!tags || !btn) return;
 
-  for (const foEdge of order.fulfillmentOrders?.edges || []) {
+  const allSelected = getAllSelected();
+  if (allSelected.length === 0) {
+    tags.innerHTML = '<span style="font-size:13px;color:var(--text3)">No items selected</span>';
+  } else {
+    tags.innerHTML = allSelected.map(i => `<span class="tag">${i.name}${i.qty < i.maxQty ? ` (${i.qty}/${i.maxQty})` : ''}</span>`).join('');
+  }
+  btn.disabled = !(allSelected.length > 0 && selectedLocation);
+}
+
+function getAllSelected() {
+  const result = [];
+  const o = currentOrder;
+  if (!o) return result;
+  for (const foEdge of o.fulfillmentOrders?.edges || []) {
     const fo = foEdge.node;
-    const selected = selectedLineItems[fo.id];
-    if (!selected?.size) continue;
-
+    if (!selectedItems[fo.id]) continue;
     for (const liEdge of fo.lineItems?.edges || []) {
       const li = liEdge.node;
-      if (selected.has(li.id)) {
-        items.push({ foId: fo.id, liId: li.id, name: li.variant?.product?.title || 'Item', qty: li.remainingQuantity });
-      }
+      if (selectedItems[fo.id][li.id] === undefined) continue;
+      result.push({
+        foId: fo.id,
+        liId: li.id,
+        qty: selectedItems[fo.id][li.id],
+        maxQty: li.remainingQuantity,
+        name: li.variant?.product?.title || 'Item',
+        variant: li.variant?.title !== 'Default Title' ? li.variant?.title : '',
+        sku: li.variant?.sku || '',
+        fromLocation: fo.assignedLocation?.name || '',
+      });
     }
   }
-  return items;
+  return result;
 }
 
-function updateReroutePanel() {
-  const items = allSelectedItems();
-  const tagsEl = document.getElementById('selected-tags');
-  const btn = document.getElementById('reroute-btn');
-  if (!tagsEl || !btn) return;
-
-  if (items.length === 0) {
-    tagsEl.innerHTML = '<span style="font-size:13px; color:var(--text-3)">No items selected</span>';
-  } else {
-    tagsEl.innerHTML = items.map(i => `<span class="tag">${i.name}</span>`).join('');
-  }
-
-  btn.disabled = !(items.length > 0 && selectedLocation);
-}
-
-// ── Reroute API call ──────────────────────────────────────
+// ── Reroute ───────────────────────────────────────────────────────────────────
 async function doReroute() {
-  const order = currentOrderData?.order;
-  if (!order) return;
-
+  const o = currentOrder;
+  if (!o) return;
   const btn = document.getElementById('reroute-btn');
-  const label = document.getElementById('reroute-label');
   const spinner = document.getElementById('reroute-spinner');
   const confirm = document.getElementById('confirm-strip');
   const confirmText = document.getElementById('confirm-text');
+  btn.disabled = true; spinner.style.display = 'block'; confirm.style.display = 'none';
 
-  btn.disabled = true;
-  label.textContent = '';
-  spinner.style.display = 'block';
-  confirm.style.display = 'none';
+  const destLoc = LOCATIONS.find(l => l.id === selectedLocation);
 
-  // Group by fulfillment order
+  // Group by FO
   const byFo = {};
-  for (const foEdge of order.fulfillmentOrders?.edges || []) {
-    const fo = foEdge.node;
-    const selected = selectedLineItems[fo.id];
-    if (!selected?.size) continue;
-
-    byFo[fo.id] = [];
-    for (const liEdge of fo.lineItems?.edges || []) {
-      const li = liEdge.node;
-      if (selected.has(li.id)) {
-        byFo[fo.id].push({ id: li.id, quantity: li.remainingQuantity });
-      }
-    }
+  for (const item of getAllSelected()) {
+    if (!byFo[item.foId]) byFo[item.foId] = [];
+    byFo[item.foId].push({ id: item.liId, quantity: item.qty });
   }
 
-  let successCount = 0;
-  let errorMsgs = [];
-
+  let errors = [];
   for (const [foId, lineItems] of Object.entries(byFo)) {
+    const fo = o.fulfillmentOrders.edges.find(e => e.node.id === foId)?.node;
+    const itemDetails = getAllSelected().filter(i => i.foId === foId).map(i => ({ name: i.name, variant: i.variant, sku: i.sku, qty: i.qty }));
+
     try {
       const res = await fetch('/api/reroute', {
         method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify({ fulfillmentOrderId: foId, lineItems, locationId: selectedLocation }),
+        headers: { 'x-username': SESSION.username, 'x-password': SESSION._pw, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          fulfillmentOrderId: foId,
+          lineItems,
+          locationId: selectedLocation,
+          orderName: o.name,
+          orderId: o.id,
+          fromLocationName: fo?.assignedLocation?.name || '',
+          toLocationName: destLoc?.name || selectedLocation,
+          itemDetails,
+        }),
       });
-
       const json = await res.json();
-      if (!res.ok) { errorMsgs.push(json.error); continue; }
-      successCount += lineItems.length;
-    } catch (err) {
-      errorMsgs.push(err.message);
-    }
+      if (!res.ok) errors.push(json.error);
+    } catch(e) { errors.push(e.message); }
   }
 
   spinner.style.display = 'none';
-  label.textContent = 'Reassign fulfillment';
 
-  const locName = locationsCache.find(l => l.id === selectedLocation)?.name || 'new location';
-
-  if (errorMsgs.length) {
-    confirmText.innerHTML = `<strong>Error:</strong> ${errorMsgs.join('; ')}`;
-    confirm.style.backgroundColor = 'var(--danger-bg)';
+  if (errors.length) {
+    confirmText.innerHTML = `<strong>Error:</strong> ${errors.join('; ')}`;
+    confirm.style.background = 'var(--danger-bg)';
     confirm.style.borderColor = '#fecaca';
     confirm.querySelector('svg').setAttribute('stroke', 'var(--danger)');
   } else {
-    confirmText.innerHTML = `<strong>${successCount} item${successCount !== 1 ? 's' : ''} successfully reassigned</strong> to ${locName}.<br><span style="font-size:12px;opacity:0.8">Shopify fulfillment order updated. The store will receive the new assignment.</span>`;
-    confirm.style.backgroundColor = 'var(--success-bg)';
+    const count = getAllSelected().length;
+    confirmText.innerHTML = `<strong>${count} item${count !== 1 ? 's' : ''} reassigned</strong> to ${destLoc?.name || 'new location'}.<br><span style="font-size:12px;opacity:0.8">Logged under ${SESSION.username}. Reload the order to see updated status.</span>`;
+    confirm.style.background = 'var(--success-bg)';
     confirm.style.borderColor = '#bbf7d0';
+    confirm.querySelector('svg').setAttribute('stroke', '#15803d');
+    selectedItems = {}; selectedLocation = null;
+    document.querySelectorAll('.line-item.selected').forEach(el => el.classList.remove('selected'));
+    document.querySelectorAll('.qty-row').forEach(el => el.style.display = 'none');
+    document.querySelectorAll('.loc-opt').forEach(el => el.classList.remove('selected'));
+    updatePanel();
   }
 
   confirm.style.display = 'flex';
-  selectedLineItems = {};
-  selectedLocation = null;
-  document.querySelectorAll('.line-item').forEach(el => el.classList.remove('selected'));
-  document.querySelectorAll('.loc-option').forEach(el => el.classList.remove('selected'));
-  updateReroutePanel();
-  btn.disabled = true;
+  btn.disabled = false;
 }
 </script>
 </body>
