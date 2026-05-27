@@ -191,27 +191,48 @@ app.post('/api/reroute', requireUser, async (req, res) => {
     // Only skip split when ALL items selected AND none are partial
     const skipSplit = allSelected && !hasPartial;
 
-    console.log(`Reroute: foItems=${foLineItemCount} selected=${lineItems.length} hasPartial=${hasPartial} skipSplit=${skipSplit}`);
+    const partialItems = lineItems.filter(li => li.quantity < (foQtyMap[li.id] || li.quantity));
+    const fullItems = lineItems.filter(li => li.quantity >= (foQtyMap[li.id] || li.quantity));
+    console.log(`Reroute: foItems=${foLineItemCount} selected=${lineItems.length} partial=${partialItems.length} full=${fullItems.length} skipSplit=${skipSplit}`);
 
-    console.log(`Final decision: skipSplit=${skipSplit}, lineItems=${JSON.stringify(lineItems)}, foLineItemCount=${foLineItemCount}`);
+    let result;
 
-    const result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, skipSplit);
-    console.log(`Reroute result: ${JSON.stringify(result?.movedFulfillmentOrder)}`);
+    if (skipSplit) {
+      // All items at full qty → move whole FO directly
+      result = await rerouteFulfillment(fulfillmentOrderId, lineItems, locationId, true);
+      console.log(`Direct move → ${result?.movedFulfillmentOrder?.assignedLocation?.name}`);
 
-    // Only move the remaining FO if the user selected ALL line items from the original FO
-    // (meaning they want everything moved, but a partial qty forced a split)
-    // If user selected a subset of items, the remaining FO should stay at the store
-    const selectedAllLineItems = lineItems.length >= foLineItemCount;
-    if (!skipSplit && result.remainingFulfillmentOrderId && selectedAllLineItems) {
-      console.log(`Moving remaining FO ${result.remainingFulfillmentOrderId} to same destination (all items selected)`);
-      try {
-        const remainResult = await rerouteFulfillment(result.remainingFulfillmentOrderId, [], locationId, true);
-        console.log(`Remaining FO move result: ${JSON.stringify(remainResult?.movedFulfillmentOrder)}`);
-      } catch(remainErr) {
-        console.error(`Remaining FO move failed: ${remainErr.message}`);
+    } else if (partialItems.length > 0 && fullItems.length === 0) {
+      // Only partial qty items selected → split them out, leave rest in place
+      result = await rerouteFulfillment(fulfillmentOrderId, partialItems, locationId, false);
+      console.log(`Partial-only split → ${result?.movedFulfillmentOrder?.assignedLocation?.name}`);
+
+    } else if (partialItems.length === 0 && fullItems.length > 0) {
+      // Only full-qty items but not all FO items → split them out, leave rest in place
+      result = await rerouteFulfillment(fulfillmentOrderId, fullItems, locationId, false);
+      console.log(`Full-subset split → ${result?.movedFulfillmentOrder?.assignedLocation?.name}`);
+
+    } else {
+      // Mixed: partial + full items
+      // Split partial items first — remaining FO will contain full items
+      result = await rerouteFulfillment(fulfillmentOrderId, partialItems, locationId, false);
+      console.log(`Mixed step1 partial split → ${result?.movedFulfillmentOrder?.assignedLocation?.name}, remainingFO=${result?.remainingFulfillmentOrderId}`);
+
+      // Now move the remaining FO which contains the full-qty items user selected
+      // But only if ALL items in FO were selected (no unselected items left behind)
+      const unselectedCount = foLineItemCount - lineItems.length;
+      if (result?.remainingFulfillmentOrderId && unselectedCount === 0) {
+        try {
+          const r2 = await rerouteFulfillment(result.remainingFulfillmentOrderId, [], locationId, true);
+          console.log(`Mixed step2 remaining move → ${r2?.movedFulfillmentOrder?.assignedLocation?.name}`);
+        } catch(e) { console.error(`Step2 failed: ${e.message}`); }
+      } else if (result?.remainingFulfillmentOrderId && unselectedCount > 0) {
+        // Split out only the selected full items from remaining FO
+        try {
+          const r2 = await rerouteFulfillment(result.remainingFulfillmentOrderId, fullItems, locationId, false);
+          console.log(`Mixed step2 split full items → ${r2?.movedFulfillmentOrder?.assignedLocation?.name}`);
+        } catch(e) { console.error(`Step2 split failed: ${e.message}`); }
       }
-    } else if (!skipSplit && result.remainingFulfillmentOrderId && !selectedAllLineItems) {
-      console.log(`Remaining FO left in place — user only selected ${lineItems.length} of ${foLineItemCount} line items`);
     }
 
     // Log the action
